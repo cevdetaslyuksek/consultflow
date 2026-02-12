@@ -1087,28 +1087,33 @@ function AdminPage({ companies, showToast, reload }) {
 
       {showModal && (
         <Modal title="Yeni Kullanıcı Oluştur" onClose={() => setShowModal(false)} width={460}>
-          <FormField label="Ad Soyad" required><input style={inp} value={form.full_name} onChange={e => setForm(p => ({ ...p, full_name: e.target.value }))} placeholder="Ad Soyad" /></FormField>
-          <FormField label="E-posta" required><input style={inp} type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="ornek@firma.com" /></FormField>
-          <FormField label="Şifre" required><input style={inp} type="password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} placeholder="En az 6 karakter" /></FormField>
-          <FormField label="Rol" required>
-            <select style={inp} value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}>
-              <option value="customer">Müşteri</option>
-              <option value="consultant">Danışman</option>
-              <option value="admin">Admin</option>
-            </select>
+          <FormField label="Ad Soyad" required>
+            <input style={inp} value={form.full_name} onChange={e => setForm(p => ({ ...p, full_name: e.target.value }))} placeholder="Ad Soyad" autoFocus />
           </FormField>
-          {form.role === "customer" && (
-            <FormField label="Firma (Müşteri için)">
-              <select style={inp} value={form.company_id} onChange={e => setForm(p => ({ ...p, company_id: e.target.value }))}>
-                <option value="">Firma seçin...</option>
-                {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          <FormField label="E-posta" required>
+            <input style={inp} type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} placeholder="ornek@firma.com" />
+          </FormField>
+          <FormField label="Şifre" required>
+            <input style={inp} type="password" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} placeholder="En az 6 karakter" />
+          </FormField>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+            <FormField label="Rol" required>
+              <select style={inp} value={form.role} onChange={e => setForm(p => ({ ...p, role: e.target.value }))}>
+                <option value="customer">Müşteri</option>
+                <option value="consultant">Danışman</option>
+                <option value="admin">Admin</option>
               </select>
             </FormField>
-          )}
-          <div style={{ background: "#F59E0B12", border: "1px solid #F59E0B30", borderRadius: 8, padding: "10px 12px", marginBottom: 16, fontSize: 12, color: "#F59E0B" }}>
-            💡 Kullanıcı oluşturulduktan sonra e-posta onayı gerekebilir. Supabase Dashboard → Authentication → Email Templates'den onay zorunluluğunu kapatabilirsiniz.
+            {form.role === "customer" && (
+              <FormField label="Firma">
+                <select style={inp} value={form.company_id} onChange={e => setForm(p => ({ ...p, company_id: e.target.value }))}>
+                  <option value="">Firma seçin...</option>
+                  {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </FormField>
+            )}
           </div>
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 12 }}>
             <Btn variant="secondary" onClick={() => setShowModal(false)}>İptal</Btn>
             <Btn onClick={createUser} loading={saving} disabled={!form.email || !form.password || !form.full_name}>Oluştur</Btn>
           </div>
