@@ -567,7 +567,7 @@ function TicketsPage({ tickets, companies, timesheets, reload, showToast, profil
     const companyId = isCustomer ? profile.company_id : form.company_id;
     if (!companyId) { showToast("Lütfen firma seçin", "error"); return; }
     setSaving(true);
-    const no = "TKT-" + String(tickets.length + 1).padStart(3, "0");
+    const no = "TKT-" + Date.now().toString().slice(-6);
     const ticketData = { ...form, company_id: companyId, no, status: "Open" };
     const { error } = await supabase.from("tickets").insert([ticketData]);
     setSaving(false);
@@ -599,14 +599,17 @@ function TicketsPage({ tickets, companies, timesheets, reload, showToast, profil
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
           <button onClick={() => setSel(null)} style={{ background: "#141520", border: "1px solid #1E2130", borderRadius: 7, padding: "7px 14px", color: "#94A3B8", fontSize: 13, cursor: "pointer" }}>← Geri</button>
           <span style={{ color: "#475569" }}>/</span>
-          <span style={{ fontSize: 12, color: "#94A3B8", fontFamily: "'DM Mono',monospace" }}>{sel.no}</span>
+          <span style={{ fontSize: 13, color: "#818CF8", fontFamily: "'DM Mono',monospace", fontWeight: 700, background: "#6366F118", padding: "3px 10px", borderRadius: 6, border: "1px solid #6366F130" }}>{sel.no}</span>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 16 }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div style={{ background: "#0D0E14", border: "1px solid #1E2130", borderRadius: 12, padding: "20px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-                <h1 style={{ fontSize: 17, fontWeight: 700, color: "#F1F5F9" }}>{sel.title}</h1>
-                <div style={{ display: "flex", gap: 7 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: "#6366F1", fontFamily: "'DM Mono',monospace", fontWeight: 700, marginBottom: 5, letterSpacing: 1, textTransform: "uppercase" }}>#{sel.no}</div>
+                  <h1 style={{ fontSize: 17, fontWeight: 700, color: "#F1F5F9" }}>{sel.title}</h1>
+                </div>
+                <div style={{ display: "flex", gap: 7, flexShrink: 0, marginLeft: 12 }}>
                   {sel.priority && <Badge {...PRIORITY_CONFIG[sel.priority]} label={PRIORITY_CONFIG[sel.priority]?.label} />}
                   {sel.status && <Badge {...STATUS_CONFIG[sel.status]} label={STATUS_CONFIG[sel.status]?.label} />}
                 </div>
@@ -681,7 +684,7 @@ function TicketsPage({ tickets, companies, timesheets, reload, showToast, profil
             <tbody>
               {filtered.map(t => (
                 <tr key={t.id} className="tr-hover" style={{ borderBottom: "1px solid #1E213040", cursor: "pointer" }} onClick={() => setSel(t)}>
-                  <td style={{ padding: "11px 13px", fontSize: 11, color: "#475569", fontFamily: "'DM Mono',monospace" }}>{t.no}</td>
+                  <td style={{ padding: "11px 13px", fontSize: 12, color: "#818CF8", fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{t.no}</td>
                   <td style={{ padding: "11px 13px", fontSize: 13, color: "#CBD5E1", fontWeight: 500, maxWidth: 200 }}><div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</div></td>
                   <td style={{ padding: "11px 13px", fontSize: 12, color: "#94A3B8" }}>{companies.find(c => c.id === t.company_id)?.name || "—"}</td>
                   <td style={{ padding: "11px 13px" }}>{t.priority && <Badge {...PRIORITY_CONFIG[t.priority]} label={PRIORITY_CONFIG[t.priority]?.label} />}</td>
