@@ -127,6 +127,60 @@ function StatCard({ label, value, sub, color = "#1D4ED8", icon }) {
   );
 }
 
+
+// ─── EMAIL HELPER ─────────────────────────────────────────────────────────────
+const ADMIN_EMAIL = "cevdetayk53@gmail.com";
+const ADMIN_NAME  = "Cevdet Ayk";
+
+async function sendEmail({ to_email, to_name, subject, body }) {
+  try {
+    if (window.emailjs) {
+      await window.emailjs.send(
+        window.EMAILJS_SERVICE_ID  || "service_consultflow",
+        window.EMAILJS_TEMPLATE_ID || "template_ticket",
+        { to_email, to_name, subject, message: body, from_name: "ConsultFlow" }
+      );
+    }
+  } catch (err) {
+    console.warn("Email gönderilemedi:", err.message);
+  }
+}
+
+async function notifyNewTicket({ ticket, company, createdBy }) {
+  const priorityMap = { Critical: "Kritik", High: "Yuksek", Medium: "Orta", Low: "Dusuk" };
+  await sendEmail({
+    to_email: ADMIN_EMAIL,
+    to_name:  ADMIN_NAME,
+    subject:  "[ConsultFlow] Yeni Ticket: " + ticket.no + " - " + ticket.title,
+    body: "Merhaba " + ADMIN_NAME + ",\n\nYeni bir destek talebi olusturuldu.\n\n" +
+      "Ticket No    : " + ticket.no + "\n" +
+      "Baslik       : " + ticket.title + "\n" +
+      "Firma        : " + (company?.name || "-") + "\n" +
+      "Oncelik      : " + (priorityMap[ticket.priority] || ticket.priority) + "\n" +
+      "Olusturan    : " + createdBy + "\n" +
+      "Tarih        : " + new Date().toLocaleDateString("tr-TR") + "\n\n" +
+      (ticket.description ? "Aciklama: " + ticket.description + "\n\n" : "") +
+      "ConsultFlow platformundan giris yaparak talebi goruntleyebilirsiniz."
+  });
+}
+
+async function notifyAssignment({ ticket, company, consultantEmail, consultantName }) {
+  const priorityMap = { Critical: "Kritik", High: "Yuksek", Medium: "Orta", Low: "Dusuk" };
+  await sendEmail({
+    to_email: consultantEmail,
+    to_name:  consultantName,
+    subject:  "[ConsultFlow] Size Yeni Ticket Atandi: " + ticket.no,
+    body: "Merhaba " + consultantName + ",\n\nSize yeni bir destek talebi atandi.\n\n" +
+      "Ticket No    : " + ticket.no + "\n" +
+      "Baslik       : " + ticket.title + "\n" +
+      "Firma        : " + (company?.name || "-") + "\n" +
+      "Oncelik      : " + (priorityMap[ticket.priority] || ticket.priority) + "\n" +
+      "Atanma       : " + new Date().toLocaleDateString("tr-TR") + "\n\n" +
+      (ticket.description ? "Aciklama: " + ticket.description + "\n\n" : "") +
+      "ConsultFlow platformuna giris yaparak talebi goruntuleyip yanitlayabilirsiniz."
+  });
+}
+
 // ─── LOGIN PAGE ───────────────────────────────────────────────────────────────
 function LoginPage({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -292,7 +346,7 @@ export default function App() {
 
       // Consultants - real users from profiles
       const { data: cons } = await supabase.from("profiles").select("id, full_name, email").eq("role", "consultant");
-      setConsultants((cons || []).map(c => ({ id: c.id, name: c.full_name || c.email })));
+      setConsultants((cons || []).map(c => ({ id: c.id, name: c.full_name || c.email, email: c.email })));
     } catch (err) {
       showToast("Veri yüklenemedi: " + err.message, "error");
     }
@@ -595,6 +649,9 @@ function TicketsPage({ tickets, companies, timesheets, consultants, reload, show
     setSaving(false);
     if (error) { showToast(error.message, "error"); return; }
     showToast("Ticket oluşturuldu!"); setShowModal(false); setForm(empty); reload();
+    // Admin'e mail gönder
+    const company = companies.find(c => c.id === companyId);
+    notifyNewTicket({ ticket: { ...ticketData, no }, company, createdBy: profile.full_name || profile.email });
   };
 
   const changeStatus = async (ticket, status) => {
@@ -610,6 +667,12 @@ function TicketsPage({ tickets, companies, timesheets, consultants, reload, show
     showToast(assignee + " atandı!");
     setSel(p => p ? { ...p, assignee, status: p.status === "Open" ? "In Progress" : p.status } : p);
     reload();
+    // Danışmana mail gönder - e-postasını profiles'dan bul
+    const consultantProfile = consultants.find(c => c.name === assignee);
+    if (consultantProfile?.email) {
+      const company = companies.find(c => c.id === ticket.company_id);
+      notifyAssignment({ ticket, company, consultantEmail: consultantProfile.email, consultantName: assignee });
+    }
   };
 
   const sendMsg = async () => {
