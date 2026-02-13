@@ -2,7 +2,19 @@
 <html lang="tr">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ConsultFlow</title>
+    <!-- EmailJS -->
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+    <script>
+      (function() {
+        window.EMAILJS_PUBLIC_KEY  = "u2BnISiUfJSmRNEeb";
+        window.EMAILJS_SERVICE_ID  = "service_iksq8kg";
+        window.EMAILJS_TEMPLATE_ID = "template_pb79two";
+        emailjs.init({ publicKey: window.EMAILJS_PUBLIC_KEY });
+        window.emailjs = emailjs;
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
