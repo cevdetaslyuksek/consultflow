@@ -556,19 +556,34 @@ function TicketsPage({ tickets, companies, timesheets, reload, showToast, profil
   const [fStatus, setFStatus] = useState("all");
   const [msgs, setMsgs] = useState({});
   const [newMsg, setNewMsg] = useState("");
-  const empty = { title: "", description: "", company_id: isCustomer ? profile.company_id : "", priority: "Medium", assignee: CONSULTANTS[0] };
+  const [efors, setEfors] = useState({});
+  const [showEforForm, setShowEforForm] = useState(false);
+  const [eforForm, setEforForm] = useState({ date: new Date().toISOString().slice(0,10), hours: "", description: "" });
+  const [savingEfor, setSavingEfor] = useState(false);
+  const empty = { title: "", description: "", company_id: isCustomer ? profile.company_id : "", priority: "Medium", assignee: "" };
   const [form, setForm] = useState(empty);
 
   const filtered = tickets.filter(t => fStatus === "all" || t.status === fStatus);
 
+  // Load messages and efors from DB for selected ticket
+  useEffect(() => {
+    if (sel) loadTicketData(sel.id, sel.no);
+  }, [sel?.id]);
+
+  const loadTicketData = async (ticketId, ticketNo) => {
+    const { data: m } = await supabase.from("ticket_messages").select("*").eq("ticket_id", ticketId).order("created_at");
+    if (m) setMsgs(p => ({ ...p, [ticketId]: m }));
+    const { data: e } = await supabase.from("time_entries").select("*").eq("ticket_no", ticketNo).order("date");
+    if (e) setEfors(p => ({ ...p, [ticketNo]: e }));
+  };
+
   const save = async () => {
     if (!form.title) return;
-    // Müşteri ise kendi firma ID'sini kullan
     const companyId = isCustomer ? profile.company_id : form.company_id;
     if (!companyId) { showToast("Lütfen firma seçin", "error"); return; }
     setSaving(true);
     const no = "TKT-" + Date.now().toString().slice(-6);
-    const ticketData = { ...form, company_id: companyId, no, status: "Open" };
+    const ticketData = { ...form, company_id: companyId, no, status: "Open", assignee: form.assignee || null };
     const { error } = await supabase.from("tickets").insert([ticketData]);
     setSaving(false);
     if (error) { showToast(error.message, "error"); return; }
@@ -577,84 +592,233 @@ function TicketsPage({ tickets, companies, timesheets, reload, showToast, profil
 
   const changeStatus = async (ticket, status) => {
     await supabase.from("tickets").update({ status, closed_at: status === "Closed" ? new Date().toISOString() : null }).eq("id", ticket.id);
-    showToast("Durum güncellendi");
+    showToast("Durum: " + STATUS_CONFIG[status]?.label);
     setSel(p => p ? { ...p, status } : p);
     reload();
   };
 
-  const sendMsg = () => {
+  const assignConsultant = async (ticket, assignee) => {
+    const { error } = await supabase.from("tickets").update({ assignee, status: ticket.status === "Open" ? "In Progress" : ticket.status }).eq("id", ticket.id);
+    if (error) { showToast(error.message, "error"); return; }
+    showToast(assignee + " atandı!");
+    setSel(p => p ? { ...p, assignee, status: p.status === "Open" ? "In Progress" : p.status } : p);
+    reload();
+  };
+
+  const sendMsg = async () => {
     if (!newMsg.trim() || !sel) return;
-    const time = new Date().toLocaleTimeString("tr", { hour: "2-digit", minute: "2-digit" });
-    const name = profile.full_name || profile.email;
-    setMsgs(p => ({ ...p, [sel.id]: [...(p[sel.id] || []), { id: Date.now(), author: name, role: profile.role, text: newMsg, time }] }));
+    const msgData = { ticket_id: sel.id, author_name: profile.full_name || profile.email, author_role: profile.role, message: newMsg };
+    const { data, error } = await supabase.from("ticket_messages").insert([msgData]).select().single();
+    if (error) {
+      // Fallback: store locally if table doesn't exist yet
+      const time = new Date().toLocaleTimeString("tr", { hour: "2-digit", minute: "2-digit" });
+      setMsgs(p => ({ ...p, [sel.id]: [...(p[sel.id] || []), { id: Date.now(), author_name: profile.full_name || profile.email, author_role: profile.role, message: newMsg, created_at: new Date().toISOString() }] }));
+    } else {
+      setMsgs(p => ({ ...p, [sel.id]: [...(p[sel.id] || []), data] }));
+    }
     setNewMsg("");
   };
 
+  const saveEfor = async () => {
+    if (!eforForm.hours || !sel) return;
+    setSavingEfor(true);
+    const { data, error } = await supabase.from("time_entries").insert([{ consultant: profile.full_name || profile.email, ticket_no: sel.no, date: eforForm.date, hours: +eforForm.hours, description: eforForm.description, billed: false }]).select().single();
+    setSavingEfor(false);
+    if (error) { showToast(error.message, "error"); return; }
+    showToast(eforForm.hours + " saat kaydedildi!");
+    setEfors(p => ({ ...p, [sel.no]: [...(p[sel.no] || []), data] }));
+    setEforForm({ date: new Date().toISOString().slice(0,10), hours: "", description: "" });
+    setShowEforForm(false);
+    reload();
+  };
+
+  // ── TICKET DETAIL ──
   if (sel) {
     const ticketMsgs = msgs[sel.id] || [];
-    const ticketTime = timesheets.filter(t => t.ticket_no === sel.no);
+    const ticketTime = efors[sel.no] || timesheets.filter(t => t.ticket_no === sel.no);
     const totalHrs = ticketTime.reduce((s, t) => s + (t.hours || 0), 0);
+    const company = companies.find(c => c.id === sel.company_id);
+    const priorityCfg = PRIORITY_CONFIG[sel.priority] || {};
+    const statusCfg = STATUS_CONFIG[sel.status] || {};
+
     return (
       <div className="page-enter">
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
-          <button onClick={() => setSel(null)} style={{ background: "#141520", border: "1px solid #1E2130", borderRadius: 7, padding: "7px 14px", color: "#94A3B8", fontSize: 13, cursor: "pointer" }}>← Geri</button>
-          <span style={{ color: "#475569" }}>/</span>
-          <span style={{ fontSize: 13, color: "#818CF8", fontFamily: "'DM Mono',monospace", fontWeight: 700, background: "#6366F118", padding: "3px 10px", borderRadius: 6, border: "1px solid #6366F130" }}>{sel.no}</span>
+        {/* Breadcrumb */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+          <button onClick={() => { setSel(null); setShowEforForm(false); }} style={{ background: "#141520", border: "1px solid #1E2130", borderRadius: 7, padding: "7px 14px", color: "#94A3B8", fontSize: 13, cursor: "pointer" }}>← Geri</button>
+          <span style={{ color: "#334155" }}>/</span>
+          <span style={{ fontSize: 13, color: "#818CF8", fontFamily: "'DM Mono',monospace", fontWeight: 700, background: "#6366F118", padding: "4px 12px", borderRadius: 6, border: "1px solid #6366F130" }}>{sel.no}</span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            {priorityCfg.color && <Badge {...priorityCfg} label={priorityCfg.label} />}
+            {statusCfg.color && <Badge {...statusCfg} label={statusCfg.label} />}
+          </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: 16 }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ background: "#0D0E14", border: "1px solid #1E2130", borderRadius: 12, padding: "20px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-                <div>
-                  <div style={{ fontSize: 11, color: "#6366F1", fontFamily: "'DM Mono',monospace", fontWeight: 700, marginBottom: 5, letterSpacing: 1, textTransform: "uppercase" }}>#{sel.no}</div>
-                  <h1 style={{ fontSize: 17, fontWeight: 700, color: "#F1F5F9" }}>{sel.title}</h1>
-                </div>
-                <div style={{ display: "flex", gap: 7, flexShrink: 0, marginLeft: 12 }}>
-                  {sel.priority && <Badge {...PRIORITY_CONFIG[sel.priority]} label={PRIORITY_CONFIG[sel.priority]?.label} />}
-                  {sel.status && <Badge {...STATUS_CONFIG[sel.status]} label={STATUS_CONFIG[sel.status]?.label} />}
-                </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 18 }}>
+          {/* LEFT COLUMN */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+            {/* Ticket Info */}
+            <div style={{ background: "#0D0E14", border: "1px solid #1E2130", borderRadius: 14, padding: "22px", position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: priorityCfg.color || "#6366F1" }} />
+              <div style={{ fontSize: 11, color: "#475569", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>{company?.name}</div>
+              <h1 style={{ fontSize: 20, fontWeight: 800, color: "#F1F5F9", marginBottom: 10 }}>{sel.title}</h1>
+              <p style={{ fontSize: 14, color: "#94A3B8", lineHeight: 1.7 }}>{sel.description || "Açıklama eklenmemiş."}</p>
+              <div style={{ display: "flex", gap: 16, marginTop: 16, paddingTop: 14, borderTop: "1px solid #1E2130" }}>
+                <div style={{ fontSize: 12, color: "#475569" }}>📅 {sel.created_at?.slice(0,10)}</div>
+                <div style={{ fontSize: 12, color: "#475569" }}>⏱️ {totalHrs} saat toplam efor</div>
+                {sel.assignee && <div style={{ fontSize: 12, color: "#818CF8" }}>👤 {sel.assignee}</div>}
               </div>
-              <p style={{ fontSize: 13, color: "#94A3B8", lineHeight: 1.6 }}>{sel.description || "Açıklama yok."}</p>
             </div>
-            <div style={{ background: "#0D0E14", border: "1px solid #1E2130", borderRadius: 12, padding: "20px" }}>
-              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#F1F5F9", marginBottom: 12 }}>Mesajlar</h3>
-              <div style={{ minHeight: 80, maxHeight: 280, overflowY: "auto", marginBottom: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+
+            {/* Mesajlaşma */}
+            <div style={{ background: "#0D0E14", border: "1px solid #1E2130", borderRadius: 14, padding: "20px" }}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: "#F1F5F9", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+                💬 Mesajlar
+                <span style={{ fontSize: 11, color: "#475569", fontWeight: 400 }}>Müşteri & Danışman iletişimi</span>
+              </h3>
+              <div style={{ minHeight: 100, maxHeight: 340, overflowY: "auto", marginBottom: 14, display: "flex", flexDirection: "column", gap: 10, padding: "4px 0" }}>
                 {ticketMsgs.length === 0
-                  ? <div style={{ textAlign: "center", color: "#475569", fontSize: 13, padding: "20px 0" }}>Henüz mesaj yok.</div>
-                  : ticketMsgs.map(m => (
-                    <div key={m.id} style={{ background: "#141520", borderRadius: 8, padding: "9px 12px", alignSelf: m.role === "customer" ? "flex-end" : "flex-start", maxWidth: "85%", border: m.role === "customer" ? "1px solid #6366F130" : "1px solid #1E2130" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 20, marginBottom: 3 }}>
-                        <span style={{ fontSize: 11, fontWeight: 600, color: m.role === "customer" ? "#818CF8" : "#10B981" }}>{m.author}</span>
-                        <span style={{ fontSize: 10, color: "#475569" }}>{m.time}</span>
+                  ? <div style={{ textAlign: "center", color: "#334155", fontSize: 13, padding: "30px 0" }}>Henüz mesaj yok. İlk mesajı gönderin!</div>
+                  : ticketMsgs.map((m, i) => {
+                    const isMe = m.author_role === profile.role;
+                    const isCustomerMsg = m.author_role === "customer";
+                    return (
+                      <div key={m.id || i} style={{ display: "flex", flexDirection: "column", alignItems: isCustomerMsg ? "flex-end" : "flex-start" }}>
+                        <div style={{ maxWidth: "78%", background: isCustomerMsg ? "linear-gradient(135deg,#6366F120,#8B5CF620)" : "#141520", border: isCustomerMsg ? "1px solid #6366F135" : "1px solid #1E2130", borderRadius: isCustomerMsg ? "14px 14px 4px 14px" : "14px 14px 14px 4px", padding: "10px 14px" }}>
+                          <div style={{ display: "flex", gap: 10, marginBottom: 5, alignItems: "center" }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: isCustomerMsg ? "#818CF8" : "#10B981" }}>{m.author_name}</span>
+                            <span style={{ fontSize: 10, color: "#334155" }}>{new Date(m.created_at).toLocaleTimeString("tr", { hour: "2-digit", minute: "2-digit" })}</span>
+                          </div>
+                          <p style={{ fontSize: 13, color: "#CBD5E1", lineHeight: 1.6 }}>{m.message}</p>
+                        </div>
                       </div>
-                      <p style={{ fontSize: 13, color: "#CBD5E1" }}>{m.text}</p>
-                    </div>
-                  ))}
+                    );
+                  })}
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <input value={newMsg} onChange={e => setNewMsg(e.target.value)} onKeyDown={e => e.key === "Enter" && sendMsg()} placeholder="Mesaj yazın... (Enter)" style={{ ...inp, flex: 1 }} />
-                <Btn onClick={sendMsg}>Gönder</Btn>
+                <input value={newMsg} onChange={e => setNewMsg(e.target.value)} onKeyDown={e => e.key === "Enter" && sendMsg()} placeholder="Mesaj yazın... (Enter ile gönderin)" style={{ ...inp, flex: 1, borderRadius: 10 }} />
+                <button onClick={sendMsg} disabled={!newMsg.trim()} style={{ background: "linear-gradient(135deg,#6366F1,#7C3AED)", border: "none", borderRadius: 10, padding: "0 18px", color: "#fff", fontWeight: 700, cursor: newMsg.trim() ? "pointer" : "not-allowed", opacity: newMsg.trim() ? 1 : 0.5, fontSize: 13 }}>Gönder</button>
               </div>
             </div>
+
+            {/* Zaman Çizelgesi */}
+            <div style={{ background: "#0D0E14", border: "1px solid #1E2130", borderRadius: 14, padding: "20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: "#F1F5F9", display: "flex", alignItems: "center", gap: 8 }}>
+                  📊 Zaman Çizelgesi
+                  <span style={{ fontSize: 11, background: "#6366F118", color: "#818CF8", padding: "2px 8px", borderRadius: 5, fontWeight: 600 }}>{totalHrs}s toplam</span>
+                </h3>
+                {(isAdmin || isConsultant) && (
+                  <button onClick={() => setShowEforForm(p => !p)} style={{ background: showEforForm ? "#FF3B5C18" : "linear-gradient(135deg,#6366F1,#7C3AED)", border: showEforForm ? "1px solid #FF3B5C30" : "none", borderRadius: 8, padding: "7px 14px", color: showEforForm ? "#FF3B5C" : "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    {showEforForm ? "✕ İptal" : "+ Efor Gir"}
+                  </button>
+                )}
+              </div>
+
+              {showEforForm && (
+                <div style={{ background: "#141520", borderRadius: 10, padding: "14px", marginBottom: 16, border: "1px solid #6366F130", animation: "fadeIn 0.2s ease" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 12px", marginBottom: 10 }}>
+                    <FormField label="Tarih"><input type="date" style={inp} value={eforForm.date} onChange={e => setEforForm(p => ({ ...p, date: e.target.value }))} /></FormField>
+                    <FormField label="Süre (Saat)"><input type="number" step="0.5" min="0.5" style={inp} value={eforForm.hours} onChange={e => setEforForm(p => ({ ...p, hours: e.target.value }))} placeholder="0.5, 1, 2..."/></FormField>
+                  </div>
+                  <FormField label="Açıklama"><input style={inp} value={eforForm.description} onChange={e => setEforForm(p => ({ ...p, description: e.target.value }))} placeholder="Yapılan iş açıklaması" /></FormField>
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                    <button onClick={saveEfor} disabled={savingEfor || !eforForm.hours} style={{ background: "linear-gradient(135deg,#6366F1,#7C3AED)", border: "none", borderRadius: 8, padding: "8px 20px", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: !eforForm.hours ? 0.5 : 1 }}>
+                      {savingEfor ? "Kaydediliyor..." : "Kaydet"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {ticketTime.length === 0 ? (
+                <div style={{ textAlign: "center", color: "#334155", fontSize: 13, padding: "20px 0" }}>Henüz efor girilmedi.</div>
+              ) : (
+                <div style={{ position: "relative" }}>
+                  {/* Timeline line */}
+                  <div style={{ position: "absolute", left: 16, top: 8, bottom: 8, width: 2, background: "linear-gradient(to bottom, #6366F1, #1E2130)", borderRadius: 2 }} />
+                  {ticketTime.map((t, i) => (
+                    <div key={t.id || i} style={{ display: "flex", gap: 16, marginBottom: 16, position: "relative" }}>
+                      <div style={{ width: 34, height: 34, borderRadius: "50%", background: t.billed ? "#10B98120" : "#6366F120", border: , display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, zIndex: 1 }}>
+                        <span style={{ fontSize: 10, fontWeight: 800, color: t.billed ? "#10B981" : "#818CF8", fontFamily: "'DM Mono',monospace" }}>{t.hours}s</span>
+                      </div>
+                      <div style={{ flex: 1, background: "#141520", borderRadius: 10, padding: "10px 14px", border: "1px solid #1E2130" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: "#CBD5E1" }}>{t.consultant}</span>
+                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                            <span style={{ fontSize: 11, color: "#475569" }}>{t.date}</span>
+                            {t.billed ? <span style={{ fontSize: 10, background: "#10B98118", color: "#10B981", padding: "1px 6px", borderRadius: 4, fontWeight: 600 }}>Faturalandı</span> : <span style={{ fontSize: 10, background: "#F59E0B18", color: "#F59E0B", padding: "1px 6px", borderRadius: 4, fontWeight: 600 }}>Bekliyor</span>}
+                          </div>
+                        </div>
+                        <p style={{ fontSize: 12, color: "#64748B" }}>{t.description}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
+
+          {/* RIGHT COLUMN */}
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+            {/* Danışman Atama - Admin için */}
+            {isAdmin && (
+              <div style={{ background: "#0D0E14", border: "1px solid #1E2130", borderRadius: 14, padding: "18px" }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: "#F1F5F9", marginBottom: 12 }}>👤 Danışman Ata</h3>
+                {sel.assignee ? (
+                  <div style={{ background: "#6366F118", border: "1px solid #6366F130", borderRadius: 8, padding: "10px 12px", marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#6366F1,#8B5CF6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff" }}>{sel.assignee[0]}</div>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "#818CF8" }}>{sel.assignee}</div>
+                      <div style={{ fontSize: 10, color: "#475569" }}>Atanmış danışman</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 12, color: "#F59E0B", background: "#F59E0B12", border: "1px solid #F59E0B30", borderRadius: 7, padding: "8px 10px", marginBottom: 10 }}>⚠️ Danışman atanmadı</div>
+                )}
+                <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                  {CONSULTANTS.map(c => (
+                    <button key={c} onClick={() => assignConsultant(sel, c)}
+                      style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, border: , background: sel.assignee===c?"#6366F118":"#141520", color: sel.assignee===c?"#818CF8":"#64748B", fontSize: 12, fontWeight: sel.assignee===c?700:400, cursor: "pointer", textAlign: "left" }}>
+                      <div style={{ width: 22, height: 22, borderRadius: "50%", background: sel.assignee===c?"#6366F130":"#1E2130", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: sel.assignee===c?"#818CF8":"#475569" }}>{c[0]}</div>
+                      {c}
+                      {sel.assignee===c && <span style={{ marginLeft: "auto", color: "#10B981" }}>✓</span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Durum Değiştir */}
             {(isAdmin || isConsultant) && (
-              <div style={{ background: "#0D0E14", border: "1px solid #1E2130", borderRadius: 12, padding: "16px" }}>
-                <h3 style={{ fontSize: 13, fontWeight: 700, color: "#F1F5F9", marginBottom: 10 }}>Durum</h3>
+              <div style={{ background: "#0D0E14", border: "1px solid #1E2130", borderRadius: 14, padding: "18px" }}>
+                <h3 style={{ fontSize: 13, fontWeight: 700, color: "#F1F5F9", marginBottom: 12 }}>🔄 Durum</h3>
                 {["Open","In Progress","Waiting","Closed"].map(s => (
                   <button key={s} onClick={() => changeStatus(sel, s)}
-                    style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", marginBottom: 5, padding: "8px 12px", borderRadius: 7, border: `1px solid ${sel.status===s?STATUS_CONFIG[s].color+"40":"#1E2130"}`, background: sel.status===s?STATUS_CONFIG[s].bg:"#141520", color: sel.status===s?STATUS_CONFIG[s].color:"#64748B", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                    {sel.status === s && <Icon name="check" size={12} />}{STATUS_CONFIG[s].label}
+                    style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", marginBottom: 6, padding: "9px 12px", borderRadius: 8, border: , background: sel.status===s?STATUS_CONFIG[s].bg:"#141520", color: sel.status===s?STATUS_CONFIG[s].color:"#64748B", fontSize: 12, fontWeight: sel.status===s?700:400, cursor: "pointer" }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: STATUS_CONFIG[s].color, display: "inline-block" }} />
+                    {STATUS_CONFIG[s].label}
+                    {sel.status===s && <span style={{ marginLeft: "auto" }}>✓</span>}
                   </button>
                 ))}
               </div>
             )}
-            <div style={{ background: "#0D0E14", border: "1px solid #1E2130", borderRadius: 12, padding: "16px" }}>
-              <h3 style={{ fontSize: 13, fontWeight: 700, color: "#F1F5F9", marginBottom: 10 }}>Detaylar</h3>
-              {[["Firma", companies.find(c => c.id === sel.company_id)?.name], ["Atanan", sel.assignee], ["Tarih", sel.created_at?.slice(0,10)], ...(isAdmin||isConsultant ? [["Toplam Efor", `${totalHrs}s`]] : [])].map(([l,v]) => (
-                <div key={l} style={{ display: "flex", justifyContent: "space-between", marginBottom: 7 }}>
+
+            {/* Ticket Özeti */}
+            <div style={{ background: "#0D0E14", border: "1px solid #1E2130", borderRadius: 14, padding: "18px" }}>
+              <h3 style={{ fontSize: 13, fontWeight: 700, color: "#F1F5F9", marginBottom: 12 }}>📋 Detaylar</h3>
+              {[
+                ["Firma", company?.name],
+                ["Ticket No", sel.no],
+                ["Atanan", sel.assignee || "Atanmadı"],
+                ["Açılış", sel.created_at?.slice(0,10)],
+                ["Toplam Efor", totalHrs + " saat"],
+                ["Mesaj", ticketMsgs.length + " adet"],
+              ].map(([l,v]) => (
+                <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #1E213050" }}>
                   <span style={{ fontSize: 12, color: "#475569" }}>{l}</span>
-                  <span style={{ fontSize: 12, color: "#CBD5E1", fontWeight: 500 }}>{v || "—"}</span>
+                  <span style={{ fontSize: 12, color: l==="Atanan" && !sel.assignee ? "#F59E0B" : "#CBD5E1", fontWeight: 500, fontFamily: l==="Ticket No"?"'DM Mono',monospace":"inherit" }}>{v || "—"}</span>
                 </div>
               ))}
             </div>
@@ -664,44 +828,95 @@ function TicketsPage({ tickets, companies, timesheets, reload, showToast, profil
     );
   }
 
+  // ── TICKET LIST (CARD VIEW) ──
+  const statusGroups = ["Open","In Progress","Waiting","Closed"];
+
   return (
     <div className="page-enter">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
-        <div><h2 style={{ fontSize: 20, fontWeight: 700, color: "#F1F5F9" }}>Ticket'lar</h2><p style={{ fontSize: 13, color: "#475569", marginTop: 3 }}>{filtered.length} ticket</p></div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: "#F1F5F9" }}>Ticket'lar</h2>
+          <p style={{ fontSize: 13, color: "#475569", marginTop: 3 }}>{filtered.length} ticket</p>
+        </div>
         <Btn icon="plus" onClick={() => setShowModal(true)}>Yeni Ticket</Btn>
       </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        <select style={{ ...inp, width: 150 }} value={fStatus} onChange={e => setFStatus(e.target.value)}>
-          <option value="all">Tüm Durumlar</option>
-          {["Open","In Progress","Waiting","Closed"].map(s => <option key={s} value={s}>{STATUS_CONFIG[s]?.label}</option>)}
-        </select>
+
+      {/* Filtreler */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+        {["all",...statusGroups].map(s => (
+          <button key={s} onClick={() => setFStatus(s)}
+            style={{ padding: "6px 14px", borderRadius: 8, border: , background: fStatus===s?(STATUS_CONFIG[s]?.bg||"#6366F118"):"#141520", color: fStatus===s?(STATUS_CONFIG[s]?.color||"#818CF8"):"#64748B", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            {s==="all"?"Tümü":STATUS_CONFIG[s]?.label} {s!=="all" && <span style={{ opacity: 0.7 }}>({tickets.filter(t=>t.status===s).length})</span>}
+          </button>
+        ))}
       </div>
-      <div style={{ background: "#0D0E14", border: "1px solid #1E2130", borderRadius: 12, overflow: "hidden" }}>
-        {filtered.length === 0
-          ? <div style={{ padding: "50px", textAlign: "center", color: "#475569" }}><div style={{ fontSize: 32, marginBottom: 10 }}>🎫</div>Ticket bulunamadı.</div>
-          : <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr style={{ borderBottom: "1px solid #1E2130" }}>{["No","Başlık","Firma","Öncelik","Durum","Atanan","Tarih",""].map(h => <th key={h} style={{ padding: "11px 13px", fontSize: 11, fontWeight: 600, color: "#475569", textAlign: "left", textTransform: "uppercase", letterSpacing: 0.5 }}>{h}</th>)}</tr></thead>
-            <tbody>
-              {filtered.map(t => (
-                <tr key={t.id} className="tr-hover" style={{ borderBottom: "1px solid #1E213040", cursor: "pointer" }} onClick={() => setSel(t)}>
-                  <td style={{ padding: "11px 13px", fontSize: 12, color: "#818CF8", fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{t.no}</td>
-                  <td style={{ padding: "11px 13px", fontSize: 13, color: "#CBD5E1", fontWeight: 500, maxWidth: 200 }}><div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</div></td>
-                  <td style={{ padding: "11px 13px", fontSize: 12, color: "#94A3B8" }}>{companies.find(c => c.id === t.company_id)?.name || "—"}</td>
-                  <td style={{ padding: "11px 13px" }}>{t.priority && <Badge {...PRIORITY_CONFIG[t.priority]} label={PRIORITY_CONFIG[t.priority]?.label} />}</td>
-                  <td style={{ padding: "11px 13px" }}>{t.status && <Badge {...STATUS_CONFIG[t.status]} label={STATUS_CONFIG[t.status]?.label} />}</td>
-                  <td style={{ padding: "11px 13px", fontSize: 12, color: "#94A3B8" }}>{t.assignee}</td>
-                  <td style={{ padding: "11px 13px", fontSize: 11, color: "#475569" }}>{t.created_at?.slice(0,10)}</td>
-                  <td style={{ padding: "11px 13px", color: "#475569" }}><Icon name="chevron" size={13} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        }
-      </div>
+
+      {/* CARD GRID */}
+      {filtered.length === 0
+        ? <div style={{ textAlign: "center", padding: "60px 0", color: "#475569" }}><div style={{ fontSize: 40, marginBottom: 12 }}>🎫</div>Ticket bulunamadı.</div>
+        : <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 14 }}>
+          {filtered.map(t => {
+            const pc = PRIORITY_CONFIG[t.priority] || {};
+            const sc = STATUS_CONFIG[t.status] || {};
+            const co = companies.find(c => c.id === t.company_id);
+            const tEfors = timesheets.filter(e => e.ticket_no === t.no);
+            const tHrs = tEfors.reduce((s, e) => s + (e.hours || 0), 0);
+            const needsAssign = !t.assignee && isAdmin;
+            return (
+              <div key={t.id} onClick={() => setSel(t)} style={{ background: "#0D0E14", border: , borderRadius: 14, padding: "18px", cursor: "pointer", position: "relative", overflow: "hidden", transition: "transform 0.15s, box-shadow 0.15s" }}
+                onMouseEnter={e => { e.currentTarget.style.transform="translateY(-2px)"; e.currentTarget.style.boxShadow="0 8px 24px rgba(0,0,0,0.3)"; }}
+                onMouseLeave={e => { e.currentTarget.style.transform="none"; e.currentTarget.style.boxShadow="none"; }}>
+                {/* Priority bar */}
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: pc.color || "#6366F1" }} />
+
+                {/* Header */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                  <span style={{ fontSize: 10, color: "#6366F1", fontFamily: "'DM Mono',monospace", fontWeight: 700, background: "#6366F115", padding: "2px 8px", borderRadius: 4 }}>{t.no}</span>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {pc.color && <Badge {...pc} label={pc.label} />}
+                    {sc.color && <Badge {...sc} label={sc.label} />}
+                  </div>
+                </div>
+
+                {/* Title */}
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: "#F1F5F9", marginBottom: 6, lineHeight: 1.4 }}>{t.title}</h3>
+
+                {/* Description preview */}
+                <p style={{ fontSize: 12, color: "#64748B", marginBottom: 12, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{t.description || "Açıklama yok"}</p>
+
+                {/* Company */}
+                <div style={{ fontSize: 11, color: "#475569", marginBottom: 12, display: "flex", alignItems: "center", gap: 5 }}>
+                  🏢 <span style={{ color: "#94A3B8", fontWeight: 500 }}>{co?.name || "—"}</span>
+                </div>
+
+                {/* Footer */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 10, borderTop: "1px solid #1E213060" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {t.assignee ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#6366F130", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#818CF8" }}>{t.assignee[0]}</div>
+                        <span style={{ fontSize: 11, color: "#94A3B8" }}>{t.assignee}</span>
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: 11, color: "#F59E0B", background: "#F59E0B12", padding: "2px 8px", borderRadius: 4, fontWeight: 600 }}>⚠ Atanmadı</span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    {tHrs > 0 && <span style={{ fontSize: 11, color: "#475569" }}>⏱ {tHrs}s</span>}
+                    <span style={{ fontSize: 11, color: "#334155" }}>{t.created_at?.slice(0,10)}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      }
+
+      {/* NEW TICKET MODAL */}
       {showModal && (
         <Modal title="Yeni Ticket" onClose={() => setShowModal(false)}>
-          <FormField label="Başlık" required><input style={inp} value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Ticket başlığı" /></FormField>
-          <FormField label="Açıklama"><textarea style={{ ...inp, height: 80, resize: "vertical" }} value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} /></FormField>
+          <FormField label="Başlık" required><input style={inp} value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Ticket başlığı" autoFocus /></FormField>
+          <FormField label="Açıklama"><textarea style={{ ...inp, height: 90, resize: "vertical" }} value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} placeholder="Sorunu detaylı açıklayın..." /></FormField>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
             {!isCustomer && (
               <FormField label="Firma" required>
@@ -711,10 +926,21 @@ function TicketsPage({ tickets, companies, timesheets, reload, showToast, profil
                 </select>
               </FormField>
             )}
-            <FormField label="Öncelik"><select style={inp} value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value }))}>{["Low","Medium","High","Critical"].map(p => <option key={p}>{p}</option>)}</select></FormField>
-            {!isCustomer && <FormField label="Atanan"><select style={inp} value={form.assignee} onChange={e => setForm(p => ({ ...p, assignee: e.target.value }))}>{CONSULTANTS.map(c => <option key={c}>{c}</option>)}</select></FormField>}
+            <FormField label="Öncelik">
+              <select style={inp} value={form.priority} onChange={e => setForm(p => ({ ...p, priority: e.target.value }))}>
+                {["Low","Medium","High","Critical"].map(p => <option key={p}>{p}</option>)}
+              </select>
+            </FormField>
+            {isAdmin && (
+              <FormField label="Danışman Ata">
+                <select style={inp} value={form.assignee} onChange={e => setForm(p => ({ ...p, assignee: e.target.value }))}>
+                  <option value="">Sonra ata...</option>
+                  {CONSULTANTS.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </FormField>
+            )}
           </div>
-          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 10 }}>
             <Btn variant="secondary" onClick={() => setShowModal(false)}>İptal</Btn>
             <Btn onClick={save} loading={saving} disabled={!form.title || (!isCustomer && !form.company_id)}>Oluştur</Btn>
           </div>
