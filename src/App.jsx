@@ -562,10 +562,14 @@ function TicketsPage({ tickets, companies, timesheets, reload, showToast, profil
   const filtered = tickets.filter(t => fStatus === "all" || t.status === fStatus);
 
   const save = async () => {
-    if (!form.title || !form.company_id) return;
+    if (!form.title) return;
+    // Müşteri ise kendi firma ID'sini kullan
+    const companyId = isCustomer ? profile.company_id : form.company_id;
+    if (!companyId) { showToast("Lütfen firma seçin", "error"); return; }
     setSaving(true);
     const no = "TKT-" + String(tickets.length + 1).padStart(3, "0");
-    const { error } = await supabase.from("tickets").insert([{ ...form, no, status: "Open" }]);
+    const ticketData = { ...form, company_id: companyId, no, status: "Open" };
+    const { error } = await supabase.from("tickets").insert([ticketData]);
     setSaving(false);
     if (error) { showToast(error.message, "error"); return; }
     showToast("Ticket oluşturuldu!"); setShowModal(false); setForm(empty); reload();
@@ -709,7 +713,7 @@ function TicketsPage({ tickets, companies, timesheets, reload, showToast, profil
           </div>
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 8 }}>
             <Btn variant="secondary" onClick={() => setShowModal(false)}>İptal</Btn>
-            <Btn onClick={save} loading={saving} disabled={!form.title || (!form.company_id && !isCustomer)}>Oluştur</Btn>
+            <Btn onClick={save} loading={saving} disabled={!form.title || (!isCustomer && !form.company_id)}>Oluştur</Btn>
           </div>
         </Modal>
       )}
