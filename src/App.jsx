@@ -115,6 +115,11 @@ const Icon = ({ name, size = 16, color }) => {
     building:   <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M3 21h18M3 7l9-4 9 4M4 7v14M20 7v14M9 21V11m6 10V11M4 11h16"/></svg>,
     tag:        <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>,
     zap:        <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
+    userplus:   <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></svg>,
+    shield:     <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>,
+    download:   <svg {...s} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
+    trash:      <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>,
+    edit:       <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
   };
   return icons[name] || null;
 };
@@ -248,8 +253,9 @@ const Sidebar = ({ page, setPage, profile, onLogout }) => {
     ...(!isAdmin && !isCons ? [] : [{ id:"companies", label:"Firmalar", icon:"companies" }]),
     { id:"tickets",   label:"Talepler",  icon:"tickets" },
     ...(!isAdmin && !isCons ? [] : [{ id:"timesheet",  label:"Efor Takip",  icon:"timesheet" }]),
-    ...(!isAdmin ? [] : [{ id:"invoices", label:"Faturalar", icon:"invoice" }]),
-    ...(!isAdmin ? [] : [{ id:"reports",  label:"Raporlar",  icon:"reports" }]),
+    ...(!isAdmin ? [] : [{ id:"invoices", label:"Faturalar",  icon:"invoice" }]),
+    ...(!isAdmin ? [] : [{ id:"reports",  label:"Raporlar",   icon:"reports" }]),
+    ...(!isAdmin ? [] : [{ id:"users",    label:"Kullanıcılar", icon:"userplus" }]),
   ];
   return (
     <div style={{ width:220, background:T.bg2, borderRight:`1px solid ${T.border}`, display:"flex", flexDirection:"column", flexShrink:0, height:"100vh", position:"sticky", top:0 }}>
@@ -1095,23 +1101,68 @@ const CompaniesPage = ({ profile, companies, reloadCompanies }) => {
   );
 };
 
+// ─── EXCEL EXPORT UTILITY ────────────────────────────────────────────────────
+const exportToCSV = (rows, filename) => {
+  if (!rows || rows.length === 0) { showToast("Dışa aktarılacak veri yok","warning"); return; }
+  const headers = Object.keys(rows[0]);
+  const csvContent = [
+    headers.join(";"),
+    ...rows.map(row => headers.map(h => {
+      const val = row[h] == null ? "" : String(row[h]).replace(/"/g,'""');
+      return `"${val}"`;
+    }).join(";"))
+  ].join("\n");
+  const BOM = "\uFEFF";
+  const blob = new Blob([BOM + csvContent], { type:"text/csv;charset=utf-8;" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url; a.download = filename + ".csv";
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+  showToast("Excel dosyası indirildi!");
+};
+
+// ─── DATE RANGE HELPERS ──────────────────────────────────────────────────────
+const getDateRange = (mode, ref) => {
+  const now = ref ? new Date(ref) : new Date();
+  if (mode === "daily") {
+    const d = now.toISOString().slice(0,10);
+    return { from: d, to: d };
+  }
+  if (mode === "weekly") {
+    const day = now.getDay() || 7;
+    const mon = new Date(now); mon.setDate(now.getDate() - day + 1);
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    return { from: mon.toISOString().slice(0,10), to: sun.toISOString().slice(0,10) };
+  }
+  // monthly
+  const y = now.getFullYear(), m = String(now.getMonth()+1).padStart(2,"0");
+  const lastDay = new Date(y, now.getMonth()+1, 0).getDate();
+  return { from: `${y}-${m}-01`, to: `${y}-${m}-${lastDay}` };
+};
+
+// ─── TIMESHEET PAGE (ENHANCED) ───────────────────────────────────────────────
 const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
   const isAdmin = profile?.role === "admin";
   const isCons  = profile?.role === "consultant";
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [fMonth, setFMonth]   = useState(new Date().toISOString().slice(0,7));
-  const [fCons, setFCons]     = useState("all");
-  const [fComp, setFComp]     = useState("all");
-  const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm]       = useState({ ticket_no:"", date:new Date().toISOString().slice(0,10), hours:"", description:"", company_id:"" });
-  const [saving, setSaving]   = useState(false);
+  const [periodMode, setPeriodMode] = useState("monthly"); // daily | weekly | monthly
+  const [refDate, setRefDate]   = useState(new Date().toISOString().slice(0,10));
+  const [fCons, setFCons]       = useState("all");
+  const [fComp, setFComp]       = useState("all");
+  const [showAdd, setShowAdd]   = useState(false);
+  const [form, setForm]         = useState({ ticket_no:"", date:new Date().toISOString().slice(0,10), hours:"", description:"", company_id:"" });
+  const [saving, setSaving]     = useState(false);
 
-  useEffect(() => { load(); }, [fMonth, fCons, fComp]);
+  const range = getDateRange(periodMode, refDate);
+
+  useEffect(() => { load(); }, [periodMode, refDate, fCons, fComp]);
 
   const load = async () => {
     setLoading(true);
-    let q = supabase.from("time_entries").select("*").gte("date", fMonth+"-01").lte("date", fMonth+"-31").order("date",{ascending:false});
+    const r = getDateRange(periodMode, refDate);
+    let q = supabase.from("time_entries").select("*").gte("date", r.from).lte("date", r.to).order("date",{ascending:false});
     if (!isAdmin && isCons) q = q.eq("consultant", profile.full_name||profile.email);
     const { data } = await q;
     let filtered = data || [];
@@ -1135,14 +1186,67 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
     showToast("Efor eklendi!"); setShowAdd(false); load();
   };
 
-  const totalH = entries.reduce((s,e)=>s+parseFloat(e.hours||0),0);
+  const shiftRef = (dir) => {
+    const d = new Date(refDate);
+    if (periodMode === "daily")   d.setDate(d.getDate() + dir);
+    if (periodMode === "weekly")  d.setDate(d.getDate() + dir*7);
+    if (periodMode === "monthly") d.setMonth(d.getMonth() + dir);
+    setRefDate(d.toISOString().slice(0,10));
+  };
+
+  const totalH    = entries.reduce((s,e)=>s+parseFloat(e.hours||0),0);
+  const billedH   = entries.filter(e=>e.billed).reduce((s,e)=>s+parseFloat(e.hours||0),0);
+  const pendingH  = totalH - billedH;
+
+  const doExport = () => {
+    const rows = entries.map(e => ({
+      "Tarih":      e.date,
+      "Ticket No":  e.ticket_no,
+      "Danışman":   e.consultant,
+      "Firma":      companies.find(c=>c.id===e.company_id)?.name||"—",
+      "Saat":       e.hours,
+      "Açıklama":   e.description||"",
+      "Durum":      e.billed ? "Faturalandı" : "Bekliyor",
+    }));
+    const label = periodMode==="daily" ? range.from : periodMode==="weekly" ? `${range.from}_${range.to}` : refDate.slice(0,7);
+    exportToCSV(rows, `efor_${label}`);
+  };
+
+  const modeLabel = periodMode==="daily"?"Günlük":periodMode==="weekly"?"Haftalık":"Aylık";
+  const rangeLabel = periodMode==="daily" ? new Date(range.from).toLocaleDateString("tr-TR")
+    : periodMode==="weekly" ? `${new Date(range.from).toLocaleDateString("tr-TR")} – ${new Date(range.to).toLocaleDateString("tr-TR")}`
+    : new Date(range.from).toLocaleDateString("tr-TR",{month:"long",year:"numeric"});
 
   return (
     <div>
-      <PageHeader title="Efor Takip" subtitle={`${entries.length} kayıt — ${totalH}h toplam`}
-        action={<Btn onClick={()=>setShowAdd(true)}><Icon name="plus" size={15}/> Efor Ekle</Btn>}/>
-      <div style={{ display:"flex", gap:10, marginBottom:20, flexWrap:"wrap" }}>
-        <input type="month" value={fMonth} onChange={e=>setFMonth(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13 }}/>
+      <PageHeader
+        title="Efor Takip"
+        subtitle={`${entries.length} kayıt — ${totalH}h toplam`}
+        action={
+          <div style={{ display:"flex", gap:8 }}>
+            <Btn variant="success" size="sm" onClick={doExport}><Icon name="download" size={14}/> Excel'e Aktar</Btn>
+            <Btn onClick={()=>setShowAdd(true)}><Icon name="plus" size={15}/> Efor Ekle</Btn>
+          </div>
+        }
+      />
+
+      {/* Period selector */}
+      <div style={{ display:"flex", gap:10, marginBottom:20, flexWrap:"wrap", alignItems:"center" }}>
+        {/* Mode tabs */}
+        <div style={{ display:"flex", background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, overflow:"hidden" }}>
+          {["daily","weekly","monthly"].map(m => (
+            <button key={m} onClick={()=>{ setPeriodMode(m); }} style={{ padding:"8px 16px", border:"none", cursor:"pointer", background:periodMode===m?`${T.accent}30`:"transparent", color:periodMode===m?T.accent2:T.text3, fontSize:13, fontWeight:periodMode===m?700:400, transition:"all 0.15s" }}>
+              {m==="daily"?"Günlük":m==="weekly"?"Haftalık":"Aylık"}
+            </button>
+          ))}
+        </div>
+        {/* Nav arrows + date display */}
+        <div style={{ display:"flex", alignItems:"center", gap:8, background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"6px 12px" }}>
+          <button onClick={()=>shiftRef(-1)} style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:18, lineHeight:1, padding:"0 4px" }}>‹</button>
+          <span style={{ fontSize:13, fontWeight:600, color:T.text, minWidth:160, textAlign:"center" }}>{rangeLabel}</span>
+          <button onClick={()=>shiftRef(1)}  style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:18, lineHeight:1, padding:"0 4px" }}>›</button>
+          <button onClick={()=>setRefDate(new Date().toISOString().slice(0,10))} style={{ background:`${T.accent}20`, border:"none", cursor:"pointer", color:T.accent2, fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:6 }}>Bugün</button>
+        </div>
         {isAdmin && (
           <select value={fCons} onChange={e=>setFCons(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
             <option value="all">Tüm Danışmanlar</option>
@@ -1154,28 +1258,46 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
           {companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </div>
+
+      {/* Summary cards */}
+      <div style={{ display:"flex", gap:12, marginBottom:20 }}>
+        {[
+          { label:"Toplam Efor", value:`${totalH}h`, color:T.accent2 },
+          { label:"Faturalandı", value:`${billedH}h`, color:T.success },
+          { label:"Bekliyor",    value:`${pendingH.toFixed(1)}h`, color:T.warning },
+          { label:"Kayıt Sayısı", value:entries.length, color:T.teal },
+        ].map(s => (
+          <div key={s.label} style={{ flex:1, background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"14px 16px" }}>
+            <div style={{ fontSize:22, fontWeight:800, color:s.color }}>{s.value}</div>
+            <div style={{ fontSize:12, color:T.text3, marginTop:3 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
       <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, overflow:"hidden" }}>
-        <div style={{ padding:"12px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"120px 1fr 100px 120px 80px 100px", gap:12, fontSize:12, fontWeight:700, color:T.text3 }}>
+        <div style={{ padding:"12px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"110px 1fr 130px 120px 70px 110px", gap:12, fontSize:12, fontWeight:700, color:T.text3 }}>
           <span>Tarih</span><span>Ticket / Açıklama</span><span>Danışman</span><span>Firma</span><span>Saat</span><span>Durum</span>
         </div>
-        {loading ? <div style={{ textAlign:"center", padding:40, color:T.text3 }}>Yükleniyor...</div> : entries.map(e=>{
+        {loading ? <div style={{ textAlign:"center", padding:40, color:T.text3 }}>Yükleniyor...</div>
+        : entries.map(e => {
           const co = companies.find(c=>c.id===e.company_id);
           return (
-            <div key={e.id} style={{ padding:"12px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"120px 1fr 100px 120px 80px 100px", gap:12, alignItems:"center" }}>
-              <span style={{ fontSize:13, color:T.text3 }}>{new Date(e.date).toLocaleDateString("tr-TR")}</span>
+            <div key={e.id} style={{ padding:"11px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"110px 1fr 130px 120px 70px 110px", gap:12, alignItems:"center" }}>
+              <span style={{ fontSize:13, color:T.text3 }}>{new Date(e.date+"T00:00:00").toLocaleDateString("tr-TR")}</span>
               <div>
                 <div style={{ fontSize:13, fontWeight:600, color:T.text }}>{e.ticket_no}</div>
                 <div style={{ fontSize:12, color:T.text3 }}>{e.description}</div>
               </div>
               <span style={{ fontSize:13, color:T.text2 }}>{e.consultant}</span>
               <span style={{ fontSize:13, color:T.teal }}>{co?.name||"—"}</span>
-              <span style={{ fontSize:14, fontWeight:700, color:T.accent2 }}>{e.hours}h</span>
+              <span style={{ fontSize:14, fontWeight:800, color:T.accent2 }}>{e.hours}h</span>
               <Badge color={e.billed?T.success:T.warning} bg={(e.billed?T.success:T.warning)+"20"}>{e.billed?"Faturalandı":"Bekliyor"}</Badge>
             </div>
           );
         })}
-        {!loading && entries.length===0 && <div style={{ textAlign:"center", padding:40, color:T.text3 }}>Kayıt yok</div>}
+        {!loading && entries.length===0 && <div style={{ textAlign:"center", padding:40, color:T.text3 }}>Bu dönemde kayıt yok</div>}
       </div>
+
       {showAdd && (
         <Modal title="Efor Ekle" onClose={()=>setShowAdd(false)}>
           <Sel label="Ticket No" value={form.ticket_no} onChange={e=>setForm(p=>({...p,ticket_no:e.target.value}))}>
@@ -1202,22 +1324,118 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
 };
 
 const InvoicesPage = ({ companies, consultants }) => {
-  const [invoices, setInvoices] = useState([]);
-  const [loading, setLoading] = useState(true);
-  useEffect(()=>{ supabase.from("invoices").select("*").order("created_at",{ascending:false}).then(({data})=>{ setInvoices(data||[]); setLoading(false); }); },[]);
+  const [invoices, setInvoices]   = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [periodMode, setPeriodMode] = useState("monthly");
+  const [refDate, setRefDate]     = useState(new Date().toISOString().slice(0,10));
+  const [fComp, setFComp]         = useState("all");
+  const [fPaid, setFPaid]         = useState("all");
+
+  const range = getDateRange(periodMode, refDate);
+
+  useEffect(() => { load(); }, [periodMode, refDate, fComp, fPaid]);
+
+  const load = async () => {
+    setLoading(true);
+    const r = getDateRange(periodMode, refDate);
+    let q = supabase.from("invoices").select("*")
+      .gte("created_at", r.from).lte("created_at", r.to + "T23:59:59")
+      .order("created_at",{ascending:false});
+    const { data } = await q;
+    let filtered = data || [];
+    if (fComp !== "all") filtered = filtered.filter(i=>i.company_id===fComp);
+    if (fPaid === "paid")    filtered = filtered.filter(i=>i.paid);
+    if (fPaid === "pending") filtered = filtered.filter(i=>!i.paid);
+    setInvoices(filtered);
+    setLoading(false);
+  };
+
+  const shiftRef = (dir) => {
+    const d = new Date(refDate);
+    if (periodMode==="daily")   d.setDate(d.getDate()+dir);
+    if (periodMode==="weekly")  d.setDate(d.getDate()+dir*7);
+    if (periodMode==="monthly") d.setMonth(d.getMonth()+dir);
+    setRefDate(d.toISOString().slice(0,10));
+  };
+
+  const totalAmount = invoices.reduce((s,i)=>s+(parseFloat(i.total)||0),0);
+  const paidAmount  = invoices.filter(i=>i.paid).reduce((s,i)=>s+(parseFloat(i.total)||0),0);
+
+  const rangeLabel = periodMode==="daily" ? new Date(range.from).toLocaleDateString("tr-TR")
+    : periodMode==="weekly" ? `${new Date(range.from).toLocaleDateString("tr-TR")} – ${new Date(range.to).toLocaleDateString("tr-TR")}`
+    : new Date(range.from).toLocaleDateString("tr-TR",{month:"long",year:"numeric"});
+
+  const doExport = () => {
+    const rows = invoices.map(inv => ({
+      "Fatura No":  inv.invoice_no || inv.id?.slice(0,8),
+      "Firma":      companies.find(c=>c.id===inv.company_id)?.name||"—",
+      "Tutar (₺)":  inv.total||0,
+      "Tarih":      new Date(inv.created_at).toLocaleDateString("tr-TR"),
+      "Durum":      inv.paid ? "Ödendi" : "Bekliyor",
+    }));
+    const label = periodMode==="daily" ? range.from : periodMode==="weekly" ? `${range.from}_${range.to}` : refDate.slice(0,7);
+    exportToCSV(rows, `faturalar_${label}`);
+  };
+
   return (
     <div>
-      <PageHeader title="Faturalar" subtitle={`${invoices.length} fatura`}/>
+      <PageHeader
+        title="Faturalar"
+        subtitle={`${invoices.length} fatura — Toplam ₺${totalAmount.toLocaleString()}`}
+        action={<Btn variant="success" size="sm" onClick={doExport}><Icon name="download" size={14}/> Excel'e Aktar</Btn>}
+      />
+
+      {/* Period selector */}
+      <div style={{ display:"flex", gap:10, marginBottom:20, flexWrap:"wrap", alignItems:"center" }}>
+        <div style={{ display:"flex", background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, overflow:"hidden" }}>
+          {["daily","weekly","monthly"].map(m=>(
+            <button key={m} onClick={()=>setPeriodMode(m)} style={{ padding:"8px 16px", border:"none", cursor:"pointer", background:periodMode===m?`${T.accent}30`:"transparent", color:periodMode===m?T.accent2:T.text3, fontSize:13, fontWeight:periodMode===m?700:400 }}>
+              {m==="daily"?"Günlük":m==="weekly"?"Haftalık":"Aylık"}
+            </button>
+          ))}
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:8, background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"6px 12px" }}>
+          <button onClick={()=>shiftRef(-1)} style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:18, lineHeight:1, padding:"0 4px" }}>‹</button>
+          <span style={{ fontSize:13, fontWeight:600, color:T.text, minWidth:160, textAlign:"center" }}>{rangeLabel}</span>
+          <button onClick={()=>shiftRef(1)}  style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:18, lineHeight:1, padding:"0 4px" }}>›</button>
+          <button onClick={()=>setRefDate(new Date().toISOString().slice(0,10))} style={{ background:`${T.accent}20`, border:"none", cursor:"pointer", color:T.accent2, fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:6 }}>Bugün</button>
+        </div>
+        <select value={fComp} onChange={e=>setFComp(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
+          <option value="all">Tüm Firmalar</option>
+          {companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+        <select value={fPaid} onChange={e=>setFPaid(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
+          <option value="all">Tüm Durumlar</option>
+          <option value="paid">Ödendi</option>
+          <option value="pending">Bekliyor</option>
+        </select>
+      </div>
+
+      {/* Summary */}
+      <div style={{ display:"flex", gap:12, marginBottom:20 }}>
+        {[
+          { label:"Toplam Tutar", value:`₺${totalAmount.toLocaleString()}`, color:T.accent2 },
+          { label:"Ödenen",       value:`₺${paidAmount.toLocaleString()}`,  color:T.success },
+          { label:"Bekleyen",     value:`₺${(totalAmount-paidAmount).toLocaleString()}`, color:T.warning },
+          { label:"Fatura Sayısı",value:invoices.length, color:T.teal },
+        ].map(s=>(
+          <div key={s.label} style={{ flex:1, background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"14px 16px" }}>
+            <div style={{ fontSize:22, fontWeight:800, color:s.color }}>{s.value}</div>
+            <div style={{ fontSize:12, color:T.text3, marginTop:3 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
       <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, overflow:"hidden" }}>
-        <div style={{ padding:"12px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"1fr 1fr 120px 120px 100px", gap:12, fontSize:12, fontWeight:700, color:T.text3 }}>
+        <div style={{ padding:"12px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"1fr 1fr 130px 130px 110px", gap:12, fontSize:12, fontWeight:700, color:T.text3 }}>
           <span>Fatura No</span><span>Firma</span><span>Tutar</span><span>Tarih</span><span>Durum</span>
         </div>
         {loading ? <div style={{ textAlign:"center", padding:40, color:T.text3 }}>Yükleniyor...</div>
-        : invoices.length===0 ? <div style={{ textAlign:"center", padding:40, color:T.text3 }}>Fatura yok</div>
+        : invoices.length===0 ? <div style={{ textAlign:"center", padding:40, color:T.text3 }}>Bu dönemde fatura yok</div>
         : invoices.map(inv=>{
           const co = companies.find(c=>c.id===inv.company_id);
           return (
-            <div key={inv.id} style={{ padding:"12px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"1fr 1fr 120px 120px 100px", gap:12, alignItems:"center" }}>
+            <div key={inv.id} style={{ padding:"12px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"1fr 1fr 130px 130px 110px", gap:12, alignItems:"center" }}>
               <span style={{ fontSize:13, fontWeight:600, color:T.text }}>{inv.invoice_no||inv.id?.slice(0,8)}</span>
               <span style={{ fontSize:13, color:T.text2 }}>{co?.name||"—"}</span>
               <span style={{ fontSize:14, fontWeight:700, color:T.success }}>₺{(inv.total||0).toLocaleString()}</span>
@@ -1232,15 +1450,111 @@ const InvoicesPage = ({ companies, consultants }) => {
 };
 
 const ReportsPage = ({ tickets, companies, consultants }) => {
-  const byStatus = Object.entries(STATUS_CONFIG).map(([k,v])=>({ label:v.label, count:tickets.filter(t=>t.status===k).length, color:v.color }));
-  const byPriority = Object.entries(PRIORITY_CONFIG).map(([k,v])=>({ label:v.label, count:tickets.filter(t=>t.priority===k).length, color:v.color }));
-  const byCompany = companies.map(c=>({ name:c.name, count:tickets.filter(t=>t.company_id===c.id).length })).sort((a,b)=>b.count-a.count).slice(0,10);
-  const maxComp = Math.max(...byCompany.map(c=>c.count),1);
+  const [periodMode, setPeriodMode] = useState("monthly");
+  const [refDate, setRefDate]       = useState(new Date().toISOString().slice(0,10));
+  const [fComp, setFComp]           = useState("all");
+
+  const range = getDateRange(periodMode, refDate);
+
+  const filtered = tickets.filter(t => {
+    const d = t.created_at?.slice(0,10)||"";
+    if (d < range.from || d > range.to) return false;
+    if (fComp !== "all" && t.company_id !== fComp) return false;
+    return true;
+  });
+
+  const shiftRef = (dir) => {
+    const d = new Date(refDate);
+    if (periodMode==="daily")   d.setDate(d.getDate()+dir);
+    if (periodMode==="weekly")  d.setDate(d.getDate()+dir*7);
+    if (periodMode==="monthly") d.setMonth(d.getMonth()+dir);
+    setRefDate(d.toISOString().slice(0,10));
+  };
+
+  const rangeLabel = periodMode==="daily" ? new Date(range.from).toLocaleDateString("tr-TR")
+    : periodMode==="weekly" ? `${new Date(range.from).toLocaleDateString("tr-TR")} – ${new Date(range.to).toLocaleDateString("tr-TR")}`
+    : new Date(range.from).toLocaleDateString("tr-TR",{month:"long",year:"numeric"});
+
+  const byStatus   = Object.entries(STATUS_CONFIG).map(([k,v])=>({ label:v.label, count:filtered.filter(t=>t.status===k).length, color:v.color }));
+  const byPriority = Object.entries(PRIORITY_CONFIG).map(([k,v])=>({ label:v.label, count:filtered.filter(t=>t.priority===k).length, color:v.color }));
+  const byCompany  = companies.map(c=>({ name:c.name, count:filtered.filter(t=>t.company_id===c.id).length })).filter(c=>c.count>0).sort((a,b)=>b.count-a.count).slice(0,10);
+  const maxComp    = Math.max(...byCompany.map(c=>c.count),1);
+
+  const exportTickets = () => {
+    const rows = filtered.map(t=>({
+      "Ticket No":   t.no,
+      "Başlık":      t.title,
+      "Firma":       companies.find(c=>c.id===t.company_id)?.name||"—",
+      "Durum":       STATUS_CONFIG[t.status]?.label||t.status,
+      "Öncelik":     PRIORITY_CONFIG[t.priority]?.label||t.priority,
+      "Danışmanlar": (Array.isArray(t.assignees)?t.assignees:t.assignee?[t.assignee]:[]).join(", "),
+      "Oluşturma":   new Date(t.created_at).toLocaleDateString("tr-TR"),
+    }));
+    const label = periodMode==="daily"?range.from:periodMode==="weekly"?`${range.from}_${range.to}`:refDate.slice(0,7);
+    exportToCSV(rows, `talepler_raporu_${label}`);
+  };
+
+  const exportSummary = () => {
+    const rows = [
+      ...byStatus.map(s=>({ "Kategori":"Durum", "Ad":s.label, "Adet":s.count })),
+      ...byPriority.map(s=>({ "Kategori":"Öncelik", "Ad":s.label, "Adet":s.count })),
+      ...byCompany.map(s=>({ "Kategori":"Firma", "Ad":s.name, "Adet":s.count })),
+    ];
+    const label = periodMode==="daily"?range.from:periodMode==="weekly"?`${range.from}_${range.to}`:refDate.slice(0,7);
+    exportToCSV(rows, `ozet_raporu_${label}`);
+  };
+
   return (
     <div>
-      <PageHeader title="Raporlar"/>
+      <PageHeader
+        title="Raporlar"
+        subtitle={`${filtered.length} talep — ${rangeLabel}`}
+        action={
+          <div style={{ display:"flex", gap:8 }}>
+            <Btn variant="ghost" size="sm" onClick={exportSummary}><Icon name="download" size={14}/> Özet Excel</Btn>
+            <Btn variant="success" size="sm" onClick={exportTickets}><Icon name="download" size={14}/> Talepler Excel</Btn>
+          </div>
+        }
+      />
+
+      {/* Period selector */}
+      <div style={{ display:"flex", gap:10, marginBottom:24, flexWrap:"wrap", alignItems:"center" }}>
+        <div style={{ display:"flex", background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, overflow:"hidden" }}>
+          {["daily","weekly","monthly"].map(m=>(
+            <button key={m} onClick={()=>setPeriodMode(m)} style={{ padding:"8px 16px", border:"none", cursor:"pointer", background:periodMode===m?`${T.accent}30`:"transparent", color:periodMode===m?T.accent2:T.text3, fontSize:13, fontWeight:periodMode===m?700:400 }}>
+              {m==="daily"?"Günlük":m==="weekly"?"Haftalık":"Aylık"}
+            </button>
+          ))}
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:8, background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"6px 12px" }}>
+          <button onClick={()=>shiftRef(-1)} style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:18, lineHeight:1, padding:"0 4px" }}>‹</button>
+          <span style={{ fontSize:13, fontWeight:600, color:T.text, minWidth:160, textAlign:"center" }}>{rangeLabel}</span>
+          <button onClick={()=>shiftRef(1)}  style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:18, lineHeight:1, padding:"0 4px" }}>›</button>
+          <button onClick={()=>setRefDate(new Date().toISOString().slice(0,10))} style={{ background:`${T.accent}20`, border:"none", cursor:"pointer", color:T.accent2, fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:6 }}>Bugün</button>
+        </div>
+        <select value={fComp} onChange={e=>setFComp(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
+          <option value="all">Tüm Firmalar</option>
+          {companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </div>
+
+      {/* Summary stats */}
+      <div style={{ display:"flex", gap:12, marginBottom:20 }}>
+        {[
+          { label:"Toplam Talep", value:filtered.length, color:T.accent2 },
+          { label:"Açık",         value:filtered.filter(t=>t.status==="Open").length, color:"#60A5FA" },
+          { label:"İşlemde",      value:filtered.filter(t=>t.status==="In Progress").length, color:T.purple },
+          { label:"Kapalı",       value:filtered.filter(t=>t.status==="Closed").length, color:T.success },
+        ].map(s=>(
+          <div key={s.label} style={{ flex:1, background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"14px 16px" }}>
+            <div style={{ fontSize:28, fontWeight:800, color:s.color }}>{s.value}</div>
+            <div style={{ fontSize:12, color:T.text3, marginTop:3 }}>{s.label}</div>
+          </div>
+        ))}
+      </div>
+
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:16, marginBottom:20 }}>
-        {[["Duruma Göre",byStatus],["Önceliğe Göre",byPriority]].map(([title,items])=>(
+        {[["Duruma Göre",byStatus,filtered.length],["Önceliğe Göre",byPriority,filtered.length]].map(([title,items,total])=>(
           <div key={title} style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:20 }}>
             <h3 style={{ margin:"0 0 16px", fontSize:15, fontWeight:700, color:T.text }}>{title}</h3>
             {items.map(item=>(
@@ -1250,7 +1564,7 @@ const ReportsPage = ({ tickets, companies, consultants }) => {
                   <span style={{ fontSize:13, fontWeight:700, color:item.color }}>{item.count}</span>
                 </div>
                 <div style={{ height:6, background:T.bg3, borderRadius:3, overflow:"hidden" }}>
-                  <div style={{ height:"100%", width:`${tickets.length?item.count/tickets.length*100:0}%`, background:item.color, borderRadius:3, transition:"width 0.5s" }}/>
+                  <div style={{ height:"100%", width:`${total?item.count/total*100:0}%`, background:item.color, borderRadius:3, transition:"width 0.5s" }}/>
                 </div>
               </div>
             ))}
@@ -1258,7 +1572,8 @@ const ReportsPage = ({ tickets, companies, consultants }) => {
         ))}
         <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:20 }}>
           <h3 style={{ margin:"0 0 16px", fontSize:15, fontWeight:700, color:T.text }}>Firmaya Göre</h3>
-          {byCompany.map(item=>(
+          {byCompany.length===0 ? <div style={{ color:T.text3, fontSize:13 }}>Bu dönemde veri yok</div>
+          : byCompany.map(item=>(
             <div key={item.name} style={{ marginBottom:10 }}>
               <div style={{ display:"flex", justifyContent:"space-between", marginBottom:3 }}>
                 <span style={{ fontSize:13, color:T.text2 }}>{item.name}</span>
@@ -1270,6 +1585,263 @@ const ReportsPage = ({ tickets, companies, consultants }) => {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Consultant breakdown */}
+      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:20 }}>
+        <h3 style={{ margin:"0 0 16px", fontSize:15, fontWeight:700, color:T.text }}>Danışmana Göre Yük</h3>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))", gap:12 }}>
+          {consultants.map(c=>{
+            const count = filtered.filter(t=>{
+              const a = Array.isArray(t.assignees)?t.assignees:(t.assignee?[t.assignee]:[]);
+              return a.includes(c.name);
+            }).length;
+            return (
+              <div key={c.id} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"12px 14px" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                  <div style={{ width:28, height:28, borderRadius:"50%", background:T.grad, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, color:"#fff" }}>{c.name[0]?.toUpperCase()}</div>
+                  <span style={{ fontSize:13, fontWeight:600, color:T.text }}>{c.name}</span>
+                </div>
+                <div style={{ fontSize:22, fontWeight:800, color:T.accent2 }}>{count}</div>
+                <div style={{ fontSize:11, color:T.text3 }}>atanmış talep</div>
+              </div>
+            );
+          })}
+          {consultants.length===0 && <div style={{ color:T.text3, fontSize:13 }}>Danışman yok</div>}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── USERS PAGE ──────────────────────────────────────────────────────────────
+const UsersPage = ({ companies, onReload }) => {
+  const [users, setUsers]         = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [showEdit, setShowEdit]   = useState(null); // profile object
+  const [creating, setCreating]   = useState(false);
+  const [form, setForm] = useState({ email:"", password:"", full_name:"", role:"consultant", company_id:"" });
+
+  useEffect(() => { loadUsers(); }, []);
+
+  const loadUsers = async () => {
+    setLoading(true);
+    const { data } = await supabase.from("profiles").select("*").order("created_at",{ascending:false});
+    setUsers(data || []);
+    setLoading(false);
+  };
+
+  const createUser = async () => {
+    if (!form.email || !form.password || !form.full_name) {
+      showToast("E-posta, şifre ve ad zorunlu", "error"); return;
+    }
+    setCreating(true);
+    // Use Supabase admin signup via auth API
+    const { data, error } = await supabase.auth.signUp({
+      email: form.email,
+      password: form.password,
+      options: {
+        data: { full_name: form.full_name, role: form.role }
+      }
+    });
+    if (error) { showToast(error.message,"error"); setCreating(false); return; }
+
+    // Upsert profile
+    if (data.user) {
+      await supabase.from("profiles").upsert({
+        id: data.user.id,
+        email: form.email,
+        full_name: form.full_name,
+        role: form.role,
+        company_id: form.role === "customer" ? form.company_id : null,
+      });
+    }
+    setCreating(false);
+    showToast("Kullanıcı oluşturuldu!");
+    setShowCreate(false);
+    setForm({ email:"", password:"", full_name:"", role:"consultant", company_id:"" });
+    loadUsers();
+    onReload?.();
+  };
+
+  const updateRole = async (uid, role, company_id) => {
+    const { error } = await supabase.from("profiles").update({ role, company_id: role==="customer"?company_id:null }).eq("id", uid);
+    if (error) { showToast(error.message,"error"); return; }
+    showToast("Rol güncellendi!");
+    setShowEdit(null);
+    loadUsers();
+    onReload?.();
+  };
+
+  const deleteProfile = async (uid) => {
+    if (!window.confirm("Bu kullanıcıyı silmek istediğinizden emin misiniz?")) return;
+    await supabase.from("profiles").delete().eq("id", uid);
+    showToast("Kullanıcı silindi!");
+    loadUsers();
+  };
+
+  const ROLE_CONFIG = {
+    admin:      { label:"Yönetici",  color:"#A855F7", bg:"#A855F720", icon:"shield" },
+    consultant: { label:"Danışman",  color:"#0EA5E9", bg:"#0EA5E920", icon:"users"  },
+    customer:   { label:"Müşteri",   color:"#10B981", bg:"#10B98120", icon:"user"   },
+  };
+
+  return (
+    <div>
+      <PageHeader
+        title="Kullanıcı Yönetimi"
+        subtitle={`${users.length} kullanıcı`}
+        action={
+          <Btn onClick={()=>setShowCreate(true)}>
+            <Icon name="userplus" size={15}/> Kullanıcı Oluştur
+          </Btn>
+        }
+      />
+
+      {/* Stats */}
+      <div style={{ display:"flex", gap:12, marginBottom:20 }}>
+        {Object.entries(ROLE_CONFIG).map(([role,rc])=>(
+          <div key={role} style={{ flex:1, background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"14px 16px" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <div style={{ width:36, height:36, borderRadius:10, background:rc.bg, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <Icon name={rc.icon} size={18} color={rc.color}/>
+              </div>
+              <div>
+                <div style={{ fontSize:22, fontWeight:800, color:rc.color }}>{users.filter(u=>u.role===role).length}</div>
+                <div style={{ fontSize:12, color:T.text3 }}>{rc.label}</div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Users table */}
+      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, overflow:"hidden" }}>
+        <div style={{ padding:"12px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"1fr 200px 160px 130px 100px", gap:12, fontSize:12, fontWeight:700, color:T.text3 }}>
+          <span>Kullanıcı</span><span>E-posta</span><span>Rol</span><span>Firma</span><span>İşlem</span>
+        </div>
+        {loading ? <div style={{ textAlign:"center", padding:40, color:T.text3 }}>Yükleniyor...</div>
+        : users.map(u => {
+          const rc = ROLE_CONFIG[u.role] || ROLE_CONFIG.customer;
+          const co = companies.find(c=>c.id===u.company_id);
+          return (
+            <div key={u.id} style={{ padding:"12px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"1fr 200px 160px 130px 100px", gap:12, alignItems:"center" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <div style={{ width:36, height:36, borderRadius:"50%", background:`${T.accent}25`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:700, color:T.accent2, flexShrink:0 }}>
+                  {(u.full_name||u.email||"?")[0].toUpperCase()}
+                </div>
+                <div>
+                  <div style={{ fontSize:14, fontWeight:600, color:T.text }}>{u.full_name||"—"}</div>
+                  <div style={{ fontSize:12, color:T.text3 }}>{new Date(u.created_at).toLocaleDateString("tr-TR")}</div>
+                </div>
+              </div>
+              <span style={{ fontSize:13, color:T.text2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{u.email}</span>
+              <div>
+                <Badge color={rc.color} bg={rc.bg}>
+                  <Icon name={rc.icon} size={11}/> {rc.label}
+                </Badge>
+              </div>
+              <span style={{ fontSize:13, color:T.teal }}>{co?.name||"—"}</span>
+              <div style={{ display:"flex", gap:6 }}>
+                <button onClick={()=>setShowEdit(u)} title="Düzenle" style={{ background:`${T.accent}20`, border:"none", borderRadius:6, padding:"6px 8px", cursor:"pointer", color:T.accent2 }}>
+                  <Icon name="edit" size={14}/>
+                </button>
+                <button onClick={()=>deleteProfile(u.id)} title="Sil" style={{ background:"#EF444420", border:"none", borderRadius:6, padding:"6px 8px", cursor:"pointer", color:"#EF4444" }}>
+                  <Icon name="trash" size={14}/>
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {!loading && users.length===0 && <div style={{ textAlign:"center", padding:40, color:T.text3 }}>Kullanıcı bulunamadı</div>}
+      </div>
+
+      {/* Create user modal */}
+      {showCreate && (
+        <Modal title="Yeni Kullanıcı Oluştur" onClose={()=>setShowCreate(false)}>
+          <div style={{ background:`${T.warning}15`, border:`1px solid ${T.warning}40`, borderRadius:10, padding:"10px 14px", marginBottom:16, fontSize:13, color:T.warning }}>
+            ⚠️ Kullanıcı e-posta adresine doğrulama maili gönderilir. Supabase Dashboard'dan "Email Confirmations" kapalıysa anında aktif olur.
+          </div>
+          <Inp label="Ad Soyad *" value={form.full_name} onChange={e=>setForm(p=>({...p,full_name:e.target.value}))} placeholder="Ad Soyad"/>
+          <Inp label="E-posta *" type="email" value={form.email} onChange={e=>setForm(p=>({...p,email:e.target.value}))} placeholder="kullanici@ornek.com"/>
+          <Inp label="Şifre *" type="password" value={form.password} onChange={e=>setForm(p=>({...p,password:e.target.value}))} placeholder="En az 6 karakter"/>
+          <div style={{ marginBottom:16 }}>
+            <label style={{ display:"block", fontSize:13, fontWeight:600, color:T.text2, marginBottom:8 }}>Rol *</label>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+              {Object.entries(ROLE_CONFIG).map(([role,rc])=>(
+                <button key={role} onClick={()=>setForm(p=>({...p,role}))} style={{
+                  padding:"12px 8px", border:`2px solid ${form.role===role?rc.color:T.border}`,
+                  borderRadius:10, cursor:"pointer", background:form.role===role?rc.bg:T.bg3,
+                  color:form.role===role?rc.color:T.text3, textAlign:"center", transition:"all 0.15s"
+                }}>
+                  <div style={{ marginBottom:4 }}><Icon name={rc.icon} size={20} color={form.role===role?rc.color:T.text3}/></div>
+                  <div style={{ fontSize:13, fontWeight:700 }}>{rc.label}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+          {form.role === "customer" && (
+            <Sel label="Firma *" value={form.company_id} onChange={e=>setForm(p=>({...p,company_id:e.target.value}))}>
+              <option value="">Firma seçin</option>
+              {companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+            </Sel>
+          )}
+          <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:8 }}>
+            <Btn variant="ghost" onClick={()=>setShowCreate(false)}>İptal</Btn>
+            <Btn onClick={createUser} disabled={creating}>
+              <Icon name="userplus" size={14}/> {creating?"Oluşturuluyor...":"Oluştur"}
+            </Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Edit role modal */}
+      {showEdit && (
+        <Modal title={`Rol Düzenle — ${showEdit.full_name||showEdit.email}`} onClose={()=>setShowEdit(null)}>
+          <EditRoleForm user={showEdit} companies={companies} ROLE_CONFIG={ROLE_CONFIG} onSave={updateRole} onClose={()=>setShowEdit(null)}/>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+const EditRoleForm = ({ user, companies, ROLE_CONFIG, onSave, onClose }) => {
+  const [role, setRole]         = useState(user.role || "consultant");
+  const [companyId, setCompanyId] = useState(user.company_id || "");
+  const [saving, setSaving]     = useState(false);
+  const submit = async () => {
+    if (role==="customer" && !companyId) { showToast("Müşteri için firma seçin","error"); return; }
+    setSaving(true);
+    await onSave(user.id, role, companyId);
+    setSaving(false);
+  };
+  return (
+    <div>
+      <div style={{ marginBottom:16 }}>
+        <label style={{ display:"block", fontSize:13, fontWeight:600, color:T.text2, marginBottom:8 }}>Yeni Rol</label>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+          {Object.entries(ROLE_CONFIG).map(([r,rc])=>(
+            <button key={r} onClick={()=>setRole(r)} style={{
+              padding:"12px 8px", border:`2px solid ${role===r?rc.color:T.border}`,
+              borderRadius:10, cursor:"pointer", background:role===r?rc.bg:T.bg3,
+              color:role===r?rc.color:T.text3, textAlign:"center", transition:"all 0.15s"
+            }}>
+              <div style={{ marginBottom:4 }}><Icon name={rc.icon} size={20} color={role===r?rc.color:T.text3}/></div>
+              <div style={{ fontSize:13, fontWeight:700 }}>{rc.label}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+      {role === "customer" && (
+        <Sel label="Firma *" value={companyId} onChange={e=>setCompanyId(e.target.value)}>
+          <option value="">Firma seçin</option>
+          {companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+        </Sel>
+      )}
+      <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:8 }}>
+        <Btn variant="ghost" onClick={onClose}>İptal</Btn>
+        <Btn onClick={submit} disabled={saving}>{saving?"Kaydediliyor...":"Kaydet"}</Btn>
       </div>
     </div>
   );
@@ -1350,6 +1922,7 @@ export default function App() {
       case "timesheet":  return <TimesheetPage profile={profile} companies={companies} consultants={consultants} tickets={tickets}/>;
       case "invoices":   return <InvoicesPage companies={companies} consultants={consultants}/>;
       case "reports":    return <ReportsPage tickets={tickets} companies={companies} consultants={consultants}/>;
+      case "users":      return <UsersPage companies={companies} onReload={loadAll}/>;
       default:           return null;
     }
   };
