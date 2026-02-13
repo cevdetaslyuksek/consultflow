@@ -739,7 +739,7 @@ function TicketsPage({ tickets, companies, timesheets, reload, showToast, profil
                   <div style={{ position: "absolute", left: 16, top: 8, bottom: 8, width: 2, background: "linear-gradient(to bottom, #6366F1, #1E2130)", borderRadius: 2 }} />
                   {ticketTime.map((t, i) => (
                     <div key={t.id || i} style={{ display: "flex", gap: 16, marginBottom: 16, position: "relative" }}>
-                      <div style={{ width: 34, height: 34, borderRadius: "50%", background: t.billed ? "#10B98120" : "#6366F120", border: , display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, zIndex: 1 }}>
+                      <div style={{ width: 34, height: 34, borderRadius: "50%", background: t.billed ? "#10B98120" : "#6366F120", border: `2px solid ${t.billed ? "#10B981" : "#6366F1"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, zIndex: 1 }}>
                         <span style={{ fontSize: 10, fontWeight: 800, color: t.billed ? "#10B981" : "#818CF8", fontFamily: "'DM Mono',monospace" }}>{t.hours}s</span>
                       </div>
                       <div style={{ flex: 1, background: "#141520", borderRadius: 10, padding: "10px 14px", border: "1px solid #1E2130" }}>
@@ -780,7 +780,7 @@ function TicketsPage({ tickets, companies, timesheets, reload, showToast, profil
                 <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                   {CONSULTANTS.map(c => (
                     <button key={c} onClick={() => assignConsultant(sel, c)}
-                      style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, border: , background: sel.assignee===c?"#6366F118":"#141520", color: sel.assignee===c?"#818CF8":"#64748B", fontSize: 12, fontWeight: sel.assignee===c?700:400, cursor: "pointer", textAlign: "left" }}>
+                      style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 8, border: `1px solid ${sel.assignee===c?"#6366F150":"#1E2130"}`, background: sel.assignee===c?"#6366F118":"#141520", color: sel.assignee===c?"#818CF8":"#64748B", fontSize: 12, fontWeight: sel.assignee===c?700:400, cursor: "pointer", textAlign: "left" }}>
                       <div style={{ width: 22, height: 22, borderRadius: "50%", background: sel.assignee===c?"#6366F130":"#1E2130", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: sel.assignee===c?"#818CF8":"#475569" }}>{c[0]}</div>
                       {c}
                       {sel.assignee===c && <span style={{ marginLeft: "auto", color: "#10B981" }}>✓</span>}
@@ -796,7 +796,7 @@ function TicketsPage({ tickets, companies, timesheets, reload, showToast, profil
                 <h3 style={{ fontSize: 13, fontWeight: 700, color: "#F1F5F9", marginBottom: 12 }}>🔄 Durum</h3>
                 {["Open","In Progress","Waiting","Closed"].map(s => (
                   <button key={s} onClick={() => changeStatus(sel, s)}
-                    style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", marginBottom: 6, padding: "9px 12px", borderRadius: 8, border: , background: sel.status===s?STATUS_CONFIG[s].bg:"#141520", color: sel.status===s?STATUS_CONFIG[s].color:"#64748B", fontSize: 12, fontWeight: sel.status===s?700:400, cursor: "pointer" }}>
+                    style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", marginBottom: 6, padding: "9px 12px", borderRadius: 8, border: `1px solid ${sel.status===s?STATUS_CONFIG[s].color+"50":"#1E2130"}`, background: sel.status===s?STATUS_CONFIG[s].bg:"#141520", color: sel.status===s?STATUS_CONFIG[s].color:"#64748B", fontSize: 12, fontWeight: sel.status===s?700:400, cursor: "pointer" }}>
                     <span style={{ width: 7, height: 7, borderRadius: "50%", background: STATUS_CONFIG[s].color, display: "inline-block" }} />
                     {STATUS_CONFIG[s].label}
                     {sel.status===s && <span style={{ marginLeft: "auto" }}>✓</span>}
@@ -845,7 +845,7 @@ function TicketsPage({ tickets, companies, timesheets, reload, showToast, profil
       <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
         {["all",...statusGroups].map(s => (
           <button key={s} onClick={() => setFStatus(s)}
-            style={{ padding: "6px 14px", borderRadius: 8, border: , background: fStatus===s?(STATUS_CONFIG[s]?.bg||"#6366F118"):"#141520", color: fStatus===s?(STATUS_CONFIG[s]?.color||"#818CF8"):"#64748B", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+            style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${fStatus===s?(STATUS_CONFIG[s]?.color||"#6366F1"):"#1E2130"}`, background: fStatus===s?(STATUS_CONFIG[s]?.bg||"#6366F118"):"#141520", color: fStatus===s?(STATUS_CONFIG[s]?.color||"#818CF8"):"#64748B", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
             {s==="all"?"Tümü":STATUS_CONFIG[s]?.label} {s!=="all" && <span style={{ opacity: 0.7 }}>({tickets.filter(t=>t.status===s).length})</span>}
           </button>
         ))}
@@ -863,7 +863,7 @@ function TicketsPage({ tickets, companies, timesheets, reload, showToast, profil
             const tHrs = tEfors.reduce((s, e) => s + (e.hours || 0), 0);
             const needsAssign = !t.assignee && isAdmin;
             return (
-              <div key={t.id} onClick={() => setSel(t)} style={{ background: "#0D0E14", border: , borderRadius: 14, padding: "18px", cursor: "pointer", position: "relative", overflow: "hidden", transition: "transform 0.15s, box-shadow 0.15s" }}
+              <div key={t.id} onClick={() => setSel(t)} style={{ background: "#0D0E14", border: `1px solid ${needsAssign?"#F59E0B40":"#1E2130"}`, borderRadius: 14, padding: "18px", cursor: "pointer", position: "relative", overflow: "hidden", transition: "transform 0.15s, box-shadow 0.15s" }}
                 onMouseEnter={e => { e.currentTarget.style.transform="translateY(-2px)"; e.currentTarget.style.boxShadow="0 8px 24px rgba(0,0,0,0.3)"; }}
                 onMouseLeave={e => { e.currentTarget.style.transform="none"; e.currentTarget.style.boxShadow="none"; }}>
                 {/* Priority bar */}
