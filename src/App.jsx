@@ -3354,12 +3354,19 @@ export default function App() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
-        supabase.from("profiles").select("*").eq("id", session.user.id).single().then(({ data }) => {
-          setUser(session.user); setProfile(data);
-          loadAll(session.user, data);
-        });
-      } else { setLoading(false); }
-    });
+        supabase.from("profiles").select("*").eq("id", session.user.id).single()
+          .then(({ data, error }) => {
+            if (error) console.warn("Profile fetch error:", error.message);
+            const prof = data || { id: session.user.id, email: session.user.email, role: "customer" };
+            setUser(session.user);
+            setProfile(prof);
+            loadAll(session.user, prof);
+          })
+          .catch(() => setLoading(false));
+      } else {
+        setLoading(false);
+      }
+    }).catch(() => setLoading(false));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_evt, session) => {
       if (!session) { setUser(null); setProfile(null); setLoading(false); }
     });
@@ -3368,7 +3375,7 @@ export default function App() {
 
   const loadAll = async (u = user, prof = profile) => {
     const p = prof || profile;
-    if (!p) return;
+    if (!p) { setLoading(false); return; }
     try {
       // Tickets
       let q = supabase.from("tickets").select("*").order("created_at", { ascending: false });
