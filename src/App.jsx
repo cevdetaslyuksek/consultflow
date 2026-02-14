@@ -87,29 +87,21 @@ const THEMES = {
   },
 };
 
-// Global reactive theme — başlangıçta localStorage'dan oku
-let _themeMode = (typeof localStorage !== "undefined" && localStorage.getItem("cf_theme")) || "dark";
-let _themeListeners = [];
-const getTheme = () => THEMES[_themeMode];
-const setThemeMode = (mode) => {
-  _themeMode = mode;
-  if (typeof localStorage !== "undefined") localStorage.setItem("cf_theme", mode);
-  _themeListeners.forEach(fn => fn(mode));
-};
-const useTheme = () => {
-  const [mode, setMode] = React.useState(_themeMode);
-  React.useEffect(() => {
-    const fn = (m) => setMode(m);
-    _themeListeners.push(fn);
-    return () => { _themeListeners = _themeListeners.filter(f => f !== fn); };
-  }, []);
-  return { mode, T: THEMES[mode], setThemeMode };
-};
-// T artık global referans — bileşenler useTheme() hook'u kullanmadan da T'ye erişebilir
-// Ama reaktif güncellemek için hook kullanmalı. Global T sadece başlangıç için:
-let T = THEMES[_themeMode];
-// Tema değişince global T'yi de güncelle (tüm static referanslar için)
-_themeListeners.push((mode) => { T = THEMES[mode]; });
+// React Context — tüm tree otomatik re-render olur
+const ThemeCtx = React.createContext({ mode:"dark", T: THEMES.dark, setThemeMode:()=>{} });
+
+// Başlangıç modunu localStorage'dan oku
+const _initMode = (typeof localStorage !== "undefined" && localStorage.getItem("cf_theme")) || "dark";
+
+// useTheme hook — isteğe bağlı kullanılabilir (Sidebar gibi modal bileşenler için)
+const useTheme = () => React.useContext(ThemeCtx);
+
+// setThemeMode global ref — ThemeProvider içinden dışarı açılır
+let _setThemeModeGlobal = () => {};
+const setThemeMode = (mode) => _setThemeModeGlobal(mode);
+
+// Global T — tüm bileşenler context olmadan da T'ye erişebilir (ThemeProvider altında otomatik güncellenir)
+let T = THEMES[_initMode];
 
 const ADMIN_EMAIL = "cevdetayk53@gmail.com";
 const ADMIN_NAME  = "Cevdet Ayk";
@@ -715,6 +707,7 @@ const EmailThread = ({ ticket, profile, companies, allUsers = [] }) => {
 
 // ─── TICKETS PAGE ────────────────────────────────────────────────────────────
 const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, tickets, allUsers = [] }) => {
+  const { T } = useTheme();
   const isAdmin    = profile?.role === "admin";
   const isCons     = profile?.role === "consultant";
   const isCustomer = profile?.role === "customer";
@@ -878,34 +871,35 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
 
   // ── TICKET CARD ──
   const TicketCard = ({ t }) => {
+    const { T } = useTheme();
     const pc = PRIORITY_CONFIG[t.priority] || PRIORITY_CONFIG.Medium;
     const sc = STATUS_CONFIG[t.status]     || STATUS_CONFIG.Open;
     const company = companies.find(c=>c.id===t.company_id);
     const assignees = getAssignees(t);
     return (
       <div style={{
-        background:T.card, border:`1px solid ${T.border}`, borderRadius:14, cursor:"pointer",
-        transition:"all 0.2s", overflow:"hidden", position:"relative",
+        background:T.card, border:`1px solid ${T.border}`, borderRadius:14,
+        transition:"all 0.2s", position:"relative",
         borderTop:`3px solid ${pc.color}`,
       }}
         onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 12px 40px rgba(0,0,0,0.3)`;e.currentTarget.style.borderColor=T.border2;}}
         onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow="";e.currentTarget.style.borderColor=T.border;}}
       >
-        {isAdmin && (
-          <button
-            onClick={e=>{e.stopPropagation();setConfirmDelete({ticket:t});}}
-            title="Ticketı Sil"
-            style={{ position:"absolute", top:10, right:10, zIndex:10, background:"#EF444420", border:"1px solid #EF444430", borderRadius:7, padding:"4px 7px", cursor:"pointer", color:"#EF4444", display:"flex", alignItems:"center" }}
-          >
-            <Icon name="trash" size={13} color="#EF4444"/>
-          </button>
-        )}
-        <div onClick={()=>setSel(t)} style={{ padding:16 }}>
+        <div onClick={()=>setSel(t)} style={{ padding:16, cursor:"pointer" }}>
           <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:8 }}>
             <span style={{ fontSize:12, fontWeight:700, color:T.text3, fontFamily:"monospace" }}>{t.no}</span>
-            <div style={{ display:"flex", gap:6 }}>
+            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
               <Badge color={pc.color} bg={pc.bg}>{pc.label}</Badge>
               <Badge color={sc.color} bg={sc.bg}>{sc.label}</Badge>
+              {isAdmin && (
+                <button
+                  onClick={e=>{e.stopPropagation();setConfirmDelete({ticket:t});}}
+                  title="Ticketı Sil"
+                  style={{ background:"#EF444425", border:"1px solid #EF444450", borderRadius:7, padding:"3px 6px", cursor:"pointer", display:"flex", alignItems:"center", marginLeft:2 }}
+                >
+                  <Icon name="trash" size={13} color="#EF4444"/>
+                </button>
+              )}
             </div>
           </div>
           <h4 style={{ margin:"0 0 8px", fontSize:14, fontWeight:700, color:T.text, lineHeight:1.4 }}>{t.title}</h4>
@@ -944,6 +938,7 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
 
   // ── TICKET ROW (list view) ──
   const TicketRow = ({ t }) => {
+    const { T } = useTheme();
     const pc = PRIORITY_CONFIG[t.priority] || PRIORITY_CONFIG.Medium;
     const sc = STATUS_CONFIG[t.status]     || STATUS_CONFIG.Open;
     const company = companies.find(c=>c.id===t.company_id);
@@ -3704,8 +3699,28 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
 };
 
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
-export default function App() {
-  const { T: themeT } = useTheme(); // tema değişince App yeniden render olur
+// ─── THEME PROVIDER ───────────────────────────────────────────────────────────
+function ThemeProvider({ children }) {
+  const [mode, setMode] = useState(_initMode);
+
+  // Global T'yi her render'da güncelle — hook'suz bileşenler de doğru renk alır
+  T = THEMES[mode];
+
+  // _setThemeModeGlobal'ı dışarı bağla
+  _setThemeModeGlobal = (m) => {
+    setMode(m);
+    if (typeof localStorage !== "undefined") localStorage.setItem("cf_theme", m);
+  };
+
+  return (
+    <ThemeCtx.Provider value={{ mode, T: THEMES[mode], setThemeMode: _setThemeModeGlobal }}>
+      {children}
+    </ThemeCtx.Provider>
+  );
+}
+
+function AppInner() {
+  const { T: themeT } = useTheme(); // tema değişince AppInner yeniden render olur
   const [user, setUser]         = useState(null);
   const [profile, setProfile]   = useState(null);
   const [page, setPage]         = useState("dashboard");
@@ -3829,5 +3844,13 @@ export default function App() {
       </div>
       <ToastContainer/>
     </>
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AppInner/>
+    </ThemeProvider>
   );
 }
