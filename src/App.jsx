@@ -586,7 +586,7 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
   const saveEfor = async () => {
     if (!eforForm.hours || !sel) return;
     setSavingEfor(true);
-    const companyId = isAdmin ? eforForm.company_id : profile.company_id;
+    const companyId = eforForm.company_id || sel.company_id;
     const { error } = await supabase.from("time_entries").insert([{
       ticket_no: sel.no,
       consultant: profile.full_name || profile.email,
@@ -768,15 +768,13 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
                       <input type="number" step="0.5" min="0.5" max="24" value={eforForm.hours} onChange={e=>setEforForm(p=>({...p,hours:e.target.value}))} placeholder="2.5" style={{ width:"100%", background:T.bg, border:`1px solid ${T.border}`, borderRadius:8, padding:"8px 10px", color:T.text, fontSize:13 }}/>
                     </div>
                   </div>
-                  {isAdmin && (
-                    <div style={{ marginBottom:10 }}>
-                      <label style={{ display:"block", fontSize:12, color:T.text2, marginBottom:4 }}>Firma (Efor Girilen)</label>
-                      <select value={eforForm.company_id} onChange={e=>setEforForm(p=>({...p,company_id:e.target.value}))} style={{ width:"100%", background:T.bg, border:`1px solid ${T.border}`, borderRadius:8, padding:"8px 10px", color:T.text, fontSize:13 }}>
-                        <option value="">Ticket Firması ({company?.name})</option>
-                        {companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
-                    </div>
-                  )}
+                  <div style={{ marginBottom:10 }}>
+                    <label style={{ display:"block", fontSize:12, color:T.text2, marginBottom:4 }}>Firma</label>
+                    <select value={eforForm.company_id} onChange={e=>setEforForm(p=>({...p,company_id:e.target.value}))} style={{ width:"100%", background:T.bg, border:`1px solid ${T.border}`, borderRadius:8, padding:"8px 10px", color:T.text, fontSize:13 }}>
+                      <option value="">Ticket Firması ({company?.name})</option>
+                      {companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
                   <div style={{ marginBottom:10 }}>
                     <label style={{ display:"block", fontSize:12, color:T.text2, marginBottom:4 }}>Açıklama</label>
                     <textarea value={eforForm.description} onChange={e=>setEforForm(p=>({...p,description:e.target.value}))} rows={2} placeholder="Yapılan iş..." style={{ width:"100%", background:T.bg, border:`1px solid ${T.border}`, borderRadius:8, padding:"8px 10px", color:T.text, fontSize:13, resize:"vertical", fontFamily:"inherit" }}/>
@@ -1548,6 +1546,9 @@ const InvoicesPage = ({ companies, consultants, tickets }) => {
   const [showCreate, setShowCreate]   = useState(false);
   const [viewInvoice, setViewInvoice] = useState(null);
   const [saving, setSaving]           = useState(false);
+  const [pendingEfors, setPendingEfors] = useState([]);
+  const [loadingEfors, setLoadingEfors] = useState(false);
+  const [selectedEforIds, setSelectedEforIds] = useState([]);
 
   const emptyForm = () => ({
     invoice_no: "FAT-" + Date.now().toString().slice(-6),
@@ -1559,6 +1560,62 @@ const InvoicesPage = ({ companies, consultants, tickets }) => {
   const range = getDateRange(periodMode, refDate);
 
   useEffect(() => { load(); }, [periodMode, refDate, fComp, fPaid]);
+
+  // Firma seçilince o firmanın bekleyen eforlarını yükle
+  useEffect(() => {
+    if (form.company_id && showCreate) {
+      loadPendingEfors(form.company_id);
+    } else {
+      setPendingEfors([]);
+      setSelectedEforIds([]);
+    }
+  }, [form.company_id, showCreate]);
+
+  const loadPendingEfors = async (companyId) => {
+    setLoadingEfors(true);
+    const { data } = await supabase.from("time_entries")
+      .select("*")
+      .eq("company_id", companyId)
+      .eq("billed", false)
+      .order("date", { ascending: false });
+    setPendingEfors(data || []);
+    setLoadingEfors(false);
+    // Tüm bekleyen eforları varsayılan seçili yap
+    setSelectedEforIds((data || []).map(e => e.id));
+  };
+
+  const toggleEforSelect = (id) => {
+    setSelectedEforIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  // Seçili eforları fatura kalemlerine dönüştür
+  const buildItemsFromEfors = () => {
+    const chosen = pendingEfors.filter(e => selectedEforIds.includes(e.id));
+    if (chosen.length === 0) return form.items;
+    // Danışman bazında grupla
+    const grouped = {};
+    chosen.forEach(e => {
+      const key = e.consultant || "Danışman";
+      if (!grouped[key]) grouped[key] = { hours: 0, descriptions: [] };
+      grouped[key].hours += parseFloat(e.hours || 0);
+      if (e.description) grouped[key].descriptions.push(e.description);
+    });
+    return Object.entries(grouped).map(([name, g]) => ({
+      description: `${name} — Danışmanlık Hizmeti${g.descriptions.length ? ": " + g.descriptions.slice(0,2).join(", ") + (g.descriptions.length > 2 ? "…" : "") : ""}`,
+      quantity: String(g.hours),
+      unit_price: ""
+    }));
+  };
+
+  const applyEforsToItems = () => {
+    const items = buildItemsFromEfors();
+    if (items.length > 0) {
+      setForm(p => ({ ...p, items }));
+      showToast(`${selectedEforIds.length} efor fatura kalemlerine aktarıldı`);
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -1598,7 +1655,7 @@ const InvoicesPage = ({ companies, consultants, tickets }) => {
     if (!form.items.some(it=>it.description&&it.unit_price)) { showToast("En az bir kalem ekleyin","error"); return; }
     setSaving(true);
     const total = calcTotal(form);
-    const { error } = await supabase.from("invoices").insert([{
+    const { data: invData, error } = await supabase.from("invoices").insert([{
       invoice_no: form.invoice_no,
       company_id: form.company_id,
       due_date:   form.due_date || null,
@@ -1607,12 +1664,20 @@ const InvoicesPage = ({ companies, consultants, tickets }) => {
       paid:       false,
       notes:      form.notes,
       items:      form.items.filter(it=>it.description&&it.unit_price),
-    }]);
+    }]).select().single();
+    // Seçili eforları faturalandı işaretle
+    if (!error && selectedEforIds.length > 0) {
+      await supabase.from("time_entries")
+        .update({ billed: true })
+        .in("id", selectedEforIds);
+    }
     setSaving(false);
     if (error) { showToast(error.message,"error"); return; }
-    showToast("Fatura oluşturuldu!");
+    showToast(`Fatura oluşturuldu! ${selectedEforIds.length > 0 ? selectedEforIds.length + " efor faturalandı olarak işaretlendi." : ""}`);
     setShowCreate(false);
     setForm(emptyForm());
+    setPendingEfors([]);
+    setSelectedEforIds([]);
     load();
   };
 
@@ -1736,6 +1801,64 @@ const InvoicesPage = ({ companies, consultants, tickets }) => {
             <option value="">Firma seçin</option>
             {companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
           </Sel>
+
+          {/* Bekleyen eforlar */}
+          {form.company_id && (
+            <div style={{ marginBottom:16 }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+                <label style={{ fontSize:13, fontWeight:600, color:T.text2 }}>
+                  Bekleyen Eforlar
+                  {pendingEfors.length > 0 && <span style={{ marginLeft:8, fontSize:11, background:`${T.warning}20`, color:T.warning, padding:"1px 7px", borderRadius:10 }}>{pendingEfors.length} bekleyen</span>}
+                </label>
+                {pendingEfors.length > 0 && (
+                  <div style={{ display:"flex", gap:6 }}>
+                    <button onClick={()=>setSelectedEforIds(pendingEfors.map(e=>e.id))} style={{ background:"transparent", border:"none", cursor:"pointer", color:T.accent2, fontSize:12, fontWeight:600 }}>Tümünü Seç</button>
+                    <span style={{ color:T.border }}>|</span>
+                    <button onClick={()=>setSelectedEforIds([])} style={{ background:"transparent", border:"none", cursor:"pointer", color:T.text3, fontSize:12 }}>Temizle</button>
+                  </div>
+                )}
+              </div>
+
+              {loadingEfors ? (
+                <div style={{ textAlign:"center", padding:16, color:T.text3, fontSize:13, background:T.bg3, borderRadius:10 }}>Eforlar yükleniyor...</div>
+              ) : pendingEfors.length === 0 ? (
+                <div style={{ textAlign:"center", padding:16, color:T.text3, fontSize:13, background:T.bg3, borderRadius:10, border:`1px solid ${T.border}` }}>
+                  Bu firmaya ait bekleyen efor yok
+                </div>
+              ) : (
+                <div style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, overflow:"hidden", maxHeight:220, overflowY:"auto" }}>
+                  <div style={{ display:"grid", gridTemplateColumns:"32px 80px 1fr 80px 80px", gap:8, padding:"7px 12px", fontSize:11, fontWeight:700, color:T.text3, textTransform:"uppercase", borderBottom:`1px solid ${T.border}` }}>
+                    <span></span><span>Tarih</span><span>Açıklama</span><span>Danışman</span><span style={{textAlign:"right"}}>Saat</span>
+                  </div>
+                  {pendingEfors.map(e=>{
+                    const isSel = selectedEforIds.includes(e.id);
+                    return (
+                      <div key={e.id} onClick={()=>toggleEforSelect(e.id)}
+                        style={{ display:"grid", gridTemplateColumns:"32px 80px 1fr 80px 80px", gap:8, padding:"8px 12px", borderBottom:`1px solid ${T.border}`, alignItems:"center", cursor:"pointer", background:isSel?`${T.accent}12`:"transparent", transition:"background 0.1s" }}>
+                        <div style={{ width:17, height:17, borderRadius:4, border:`2px solid ${isSel?T.accent:T.border2}`, background:isSel?T.accent:"transparent", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                          {isSel && <span style={{ color:"#fff", fontSize:10, fontWeight:800 }}>✓</span>}
+                        </div>
+                        <span style={{ fontSize:12, color:T.text3 }}>{new Date(e.date+"T00:00:00").toLocaleDateString("tr-TR")}</span>
+                        <span style={{ fontSize:12, color:T.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.description||e.ticket_no||"—"}</span>
+                        <span style={{ fontSize:12, color:T.text2 }}>{e.consultant?.split(" ")[0]||"—"}</span>
+                        <span style={{ fontSize:13, fontWeight:700, color:T.teal, textAlign:"right" }}>{e.hours}h</span>
+                      </div>
+                    );
+                  })}
+                  <div style={{ padding:"8px 12px", borderTop:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <span style={{ fontSize:12, color:T.text3 }}>
+                      {selectedEforIds.length} / {pendingEfors.length} seçili —  <b style={{ color:T.teal }}>{pendingEfors.filter(e=>selectedEforIds.includes(e.id)).reduce((s,e)=>s+parseFloat(e.hours||0),0)}h</b>
+                    </span>
+                    {selectedEforIds.length > 0 && (
+                      <Btn variant="ghost" size="sm" onClick={applyEforsToItems}>
+                        <Icon name="zap" size={12}/> Kalemlere Aktar
+                      </Btn>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <div style={{ marginBottom:16 }}>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
               <label style={{ fontSize:13, fontWeight:600, color:T.text2 }}>Fatura Kalemleri *</label>
