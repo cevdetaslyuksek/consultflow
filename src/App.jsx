@@ -22,6 +22,23 @@ const STATUS_CONFIG = {
   "Closed":      { color: "#6B7280", bg: "#6B728018", label: "Kapalı" },
 };
 
+const TICKET_TOPICS = [
+  { id:"SAP_HR",    label:"SAP HR",    color:"#6366F1" },
+  { id:"SAP_MM",    label:"SAP MM",    color:"#0EA5E9" },
+  { id:"SAP_SD",    label:"SAP SD",    color:"#10B981" },
+  { id:"SAP_FI",    label:"SAP FI",    color:"#F59E0B" },
+  { id:"SAP_CO",    label:"SAP CO",    color:"#EF4444" },
+  { id:"SAP_PP",    label:"SAP PP",    color:"#8B5CF6" },
+  { id:"SAP_PM",    label:"SAP PM",    color:"#EC4899" },
+  { id:"SAP_WM",    label:"SAP WM",    color:"#14B8A6" },
+  { id:"SAP_ABAP",  label:"SAP ABAP",  color:"#F97316" },
+  { id:"SAP_BASIS", label:"SAP BASIS", color:"#84CC16" },
+  { id:"SAP_BI",    label:"SAP BI",    color:"#06B6D4" },
+  { id:"SAP_CRM",   label:"SAP CRM",   color:"#A855F7" },
+  { id:"GENEL",     label:"Genel",     color:"#6B7280" },
+  { id:"DIGER",     label:"Diğer",     color:"#94A3B8" },
+];
+
 // ─── THEME ────────────────────────────────────────────────────────────────────
 const T = {
   bg:        "#0F1117",
@@ -590,21 +607,9 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
   const [fStatus, setFStatus]     = useState("all");
   const [fCompany, setFCompany]   = useState("all");
   const [fConsultant, setFConsultant] = useState("all");
+  const [fTopic, setFTopic]       = useState("all");
   const [fSort, setFSort]         = useState("newest");
   const [search, setSearch]       = useState("");
-  const [efors, setEfors]         = useState({});
-  const [showEforForm, setShowEforForm] = useState(false);
-  const [eforForm, setEforForm]   = useState({ date: new Date().toISOString().slice(0,10), hours:"", description:"", company_id:"" });
-  const [savingEfor, setSavingEfor] = useState(false);
-  const empty = { title:"", description:"", company_id: isCustomer ? profile.company_id:"", priority:"Medium", assignees:[] };
-  const [form, setForm] = useState(empty);
-
-  useEffect(() => { if(sel) loadEfors(sel.no); }, [sel?.id]);
-
-  const loadEfors = async (no) => {
-    const { data } = await supabase.from("time_entries").select("*").eq("ticket_no", no).order("date");
-    if (data) setEfors(p => ({ ...p, [no]: data }));
-  };
 
   // Filter & sort
   const filtered = tickets
@@ -615,26 +620,29 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
         const assignees = Array.isArray(t.assignees) ? t.assignees : (t.assignee ? [t.assignee] : []);
         if (!assignees.includes(fConsultant)) return false;
       }
+      if (fTopic !== "all") {
+        const topics = Array.isArray(t.topics) ? t.topics : [];
+        if (!topics.includes(fTopic)) return false;
+      }
       if (search) {
         const q = search.toLowerCase();
         if (!t.no?.toLowerCase().includes(q) && !t.title?.toLowerCase().includes(q)) return false;
       }
       return true;
     })
-    .sort((a,b) => {
-      if (fSort === "newest") return new Date(b.created_at)-new Date(a.created_at);
-      if (fSort === "oldest") return new Date(a.created_at)-new Date(b.created_at);
-      if (fSort === "priority") {
-        const o = { Critical:0, High:1, Medium:2, Low:3 };
-        return (o[a.priority]||2)-(o[b.priority]||2);
-      }
-      if (fSort === "company") {
-        const ca = companies.find(c=>c.id===a.company_id)?.name||"";
-        const cb = companies.find(c=>c.id===b.company_id)?.name||"";
-        return ca.localeCompare(cb);
-      }
-      return 0;
-    });
+  const [efors, setEfors]         = useState({});
+  const [showEforForm, setShowEforForm] = useState(false);
+  const [eforForm, setEforForm]   = useState({ date: new Date().toISOString().slice(0,10), hours:"", description:"", company_id:"" });
+  const [savingEfor, setSavingEfor] = useState(false);
+  const empty = { title:"", description:"", company_id: isCustomer ? profile.company_id:"", priority:"Medium", assignees:[], topics:[] };
+  const [form, setForm] = useState(empty);
+
+  useEffect(() => { if(sel) loadEfors(sel.no); }, [sel?.id]);
+
+  const loadEfors = async (no) => {
+    const { data } = await supabase.from("time_entries").select("*").eq("ticket_no", no).order("date");
+    if (data) setEfors(p => ({ ...p, [no]: data }));
+  };
 
   const save = async () => {
     if (!form.title) return;
@@ -643,7 +651,7 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     setSaving(true);
     const no = "TKT-" + Date.now().toString().slice(-6);
     const assignees = Array.isArray(form.assignees) ? form.assignees : [];
-    const ticketData = { ...form, company_id:companyId, no, status:"Open", assignee: assignees[0]||null, assignees };
+    const ticketData = { ...form, company_id:companyId, no, status:"Open", assignee: assignees[0]||null, assignees, topics: form.topics||[] };
     const { error } = await supabase.from("tickets").insert([ticketData]);
     setSaving(false);
     if (error) { showToast(error.message,"error"); return; }
@@ -727,6 +735,18 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
             </div>
           </div>
           <h4 style={{ margin:"0 0 8px", fontSize:14, fontWeight:700, color:T.text, lineHeight:1.4 }}>{t.title}</h4>
+          {/* Topics */}
+          {Array.isArray(t.topics) && t.topics.length > 0 && (
+            <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:8 }}>
+              {t.topics.slice(0,3).map(tid => {
+                const topic = TICKET_TOPICS.find(tp=>tp.id===tid);
+                return topic ? (
+                  <span key={tid} style={{ fontSize:10, fontWeight:700, color:topic.color, background:topic.color+"20", padding:"2px 7px", borderRadius:10 }}>{topic.label}</span>
+                ) : null;
+              })}
+              {t.topics.length > 3 && <span style={{ fontSize:10, color:T.text3, padding:"2px 5px" }}>+{t.topics.length-3}</span>}
+            </div>
+          )}
           {t.description && <p style={{ margin:"0 0 10px", fontSize:13, color:T.text3, lineHeight:1.5, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>{t.description}</p>}
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
             <div style={{ display:"flex", alignItems:"center", gap:6 }}>
@@ -971,6 +991,7 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
                 ["Oluşturma", new Date(sel.created_at).toLocaleDateString("tr-TR")],
                 ["Toplam Efor", totalHours + "h"],
                 ["Danışmanlar", assignees.length ? assignees.join(", ") : "Atanmamış"],
+                ["Konular", (Array.isArray(sel.topics)&&sel.topics.length ? sel.topics.map(id=>TICKET_TOPICS.find(t=>t.id===id)?.label||id).join(", ") : "—")],
               ].map(([k,v]) => (
                 <div key={k} style={{ display:"flex", justifyContent:"space-between", padding:"6px 0", borderBottom:`1px solid ${T.border}` }}>
                   <span style={{ fontSize:13, color:T.text3 }}>{k}</span>
@@ -1029,13 +1050,22 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
           </select>
         )}
 
-        {/* Consultant filter */}
-        {isAdmin && (
+        {/* Consultant filter — admin tüm danışmanları, danışman sadece kendini görmek için filtreler */}
+        {(isAdmin || isCons) && (
           <select value={fConsultant} onChange={e=>setFConsultant(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
             <option value="all">Tüm Danışmanlar</option>
-            {consultants.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+            {isAdmin
+              ? consultants.map(c => <option key={c.id} value={c.name}>{c.name}</option>)
+              : <option value={profile.full_name||profile.email}>{profile.full_name||profile.email} (Ben)</option>
+            }
           </select>
         )}
+
+        {/* Topic filter */}
+        <select value={fTopic} onChange={e=>setFTopic(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
+          <option value="all">Tüm Konular</option>
+          {TICKET_TOPICS.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+        </select>
 
         {/* Sort */}
         <select value={fSort} onChange={e=>setFSort(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
@@ -1076,6 +1106,41 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
           <Sel label="Öncelik" value={form.priority} onChange={e=>setForm(p=>({...p,priority:e.target.value}))}>
             {Object.entries(PRIORITY_CONFIG).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
           </Sel>
+
+          {/* Talebin Konusu — çoklu seçim */}
+          <div style={{ marginBottom:16 }}>
+            <label style={{ display:"block", fontSize:13, fontWeight:600, color:T.text2, marginBottom:8 }}>
+              Talebin Konusu
+              {form.topics?.length > 0 && <span style={{ marginLeft:8, fontSize:11, color:T.teal }}>({form.topics.length} seçili)</span>}
+            </label>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+              {TICKET_TOPICS.map(topic => {
+                const sel2 = form.topics?.includes(topic.id);
+                return (
+                  <button
+                    key={topic.id}
+                    onClick={()=>setForm(p=>({
+                      ...p,
+                      topics: sel2
+                        ? p.topics.filter(x=>x!==topic.id)
+                        : [...(p.topics||[]), topic.id]
+                    }))}
+                    style={{
+                      padding:"5px 12px", borderRadius:20, cursor:"pointer",
+                      border:`2px solid ${sel2 ? topic.color : T.border}`,
+                      background: sel2 ? topic.color+"25" : T.bg3,
+                      color: sel2 ? topic.color : T.text3,
+                      fontSize:12, fontWeight: sel2 ? 700 : 400,
+                      transition:"all 0.15s"
+                    }}
+                  >
+                    {sel2 && "✓ "}{topic.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {isAdmin && (
             <div style={{ marginBottom:16 }}>
               <label style={{ display:"block", fontSize:13, fontWeight:600, color:T.text2, marginBottom:6 }}>Danışmanlar</label>
