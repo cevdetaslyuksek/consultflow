@@ -275,6 +275,39 @@ const Badge = ({ children, color, bg }) => (
   <span style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"3px 10px", borderRadius:20, fontSize:12, fontWeight:600, color, background:bg||color+"20" }}>{children}</span>
 );
 
+// ─── CONFIRM DELETE MODAL ─────────────────────────────────────────────────────
+const ConfirmModal = ({ title, message, detail, confirmLabel="Sil", onConfirm, onClose, loading=false }) => {
+  const { T } = useTheme();
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.8)", zIndex:2000, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:16, width:"100%", maxWidth:420, padding:28, boxShadow:"0 24px 80px rgba(0,0,0,0.6)" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:16 }}>
+          <div style={{ width:44, height:44, borderRadius:12, background:"#EF444420", border:"1px solid #EF444440", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+            <Icon name="trash" size={20} color="#EF4444"/>
+          </div>
+          <h3 style={{ margin:0, fontSize:17, fontWeight:700, color:T.text }}>{title}</h3>
+        </div>
+        <p style={{ margin:"0 0 10px", fontSize:14, color:T.text2, lineHeight:1.6 }}>{message}</p>
+        {detail && (
+          <p style={{ margin:"0 0 20px", fontSize:13, color:"#EF4444", background:"#EF444412", border:"1px solid #EF444430", borderRadius:8, padding:"10px 12px", lineHeight:1.5 }}>{detail}</p>
+        )}
+        {!detail && <div style={{ marginBottom:20 }}/>}
+        <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
+          <button onClick={onClose} disabled={loading} style={{ padding:"10px 20px", borderRadius:10, border:`1px solid ${T.border}`, background:"transparent", color:T.text2, fontSize:14, fontWeight:600, cursor:"pointer" }}>
+            İptal
+          </button>
+          <button onClick={onConfirm} disabled={loading} style={{ padding:"10px 20px", borderRadius:10, border:"none", background:"#EF4444", color:"#fff", fontSize:14, fontWeight:700, cursor:loading?"not-allowed":"pointer", opacity:loading?0.7:1, display:"flex", alignItems:"center", gap:8 }}>
+            {loading
+              ? <><span style={{ width:14, height:14, border:"2px solid rgba(255,255,255,0.3)", borderTop:"2px solid #fff", borderRadius:"50%", display:"inline-block", animation:"cfSpin 0.8s linear infinite" }}/>Siliniyor...</>
+              : <><Icon name="trash" size={14}/>{confirmLabel}</>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── LOGIN ───────────────────────────────────────────────────────────────────
 const LoginPage = ({ onLogin }) => {
   const { T } = useTheme();
@@ -695,6 +728,8 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
   const [fTopic, setFTopic]       = useState("all");
   const [fSort, setFSort]         = useState("newest");
   const [search, setSearch]       = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(null); // {ticket} veya null
+  const [deleting, setDeleting]   = useState(false);
 
   // Filter & sort
   const filtered = tickets
@@ -744,6 +779,29 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     setShowModal(false); setForm(empty); reloadAll();
     const company = companies.find(c=>c.id===companyId);
     notifyNewTicket({ ticket:{...ticketData,no}, company, createdBy: profile.full_name||profile.email });
+  };
+
+  const deleteTicket = async (ticket) => {
+    setDeleting(true);
+    try {
+      // 1. Ticket mesajlarını sil
+      await supabase.from("ticket_messages").delete().eq("ticket_id", ticket.id);
+      // 2. Efor kayıtlarını sil (ticket_no ile eşleşenler)
+      await supabase.from("time_entries").delete().eq("ticket_no", ticket.no);
+      // 3. Bildirimleri sil
+      await supabase.from("notifications").delete().eq("ref_id", ticket.id).eq("ref_type", "ticket");
+      // 4. Ticketı sil
+      const { error } = await supabase.from("tickets").delete().eq("id", ticket.id);
+      if (error) throw error;
+      showToast(`${ticket.no} silindi!`);
+      setConfirmDelete(null);
+      setSel(null);
+      reloadAll();
+    } catch(err) {
+      showToast(err.message, "error");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const changeStatus = async (ticket, status) => {
@@ -825,15 +883,24 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     const company = companies.find(c=>c.id===t.company_id);
     const assignees = getAssignees(t);
     return (
-      <div onClick={()=>setSel(t)} style={{
+      <div style={{
         background:T.card, border:`1px solid ${T.border}`, borderRadius:14, cursor:"pointer",
-        transition:"all 0.2s", overflow:"hidden",
+        transition:"all 0.2s", overflow:"hidden", position:"relative",
         borderTop:`3px solid ${pc.color}`,
       }}
         onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow=`0 12px 40px rgba(0,0,0,0.3)`;e.currentTarget.style.borderColor=T.border2;}}
         onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow="";e.currentTarget.style.borderColor=T.border;}}
       >
-        <div style={{ padding:16 }}>
+        {isAdmin && (
+          <button
+            onClick={e=>{e.stopPropagation();setConfirmDelete({ticket:t});}}
+            title="Ticketı Sil"
+            style={{ position:"absolute", top:10, right:10, zIndex:10, background:"#EF444420", border:"1px solid #EF444430", borderRadius:7, padding:"4px 7px", cursor:"pointer", color:"#EF4444", display:"flex", alignItems:"center" }}
+          >
+            <Icon name="trash" size={13} color="#EF4444"/>
+          </button>
+        )}
+        <div onClick={()=>setSel(t)} style={{ padding:16 }}>
           <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:8 }}>
             <span style={{ fontSize:12, fontWeight:700, color:T.text3, fontFamily:"monospace" }}>{t.no}</span>
             <div style={{ display:"flex", gap:6 }}>
@@ -907,6 +974,11 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
         </div>
         <span style={{ fontSize:12, color:T.text3, flexShrink:0 }}>{new Date(t.created_at).toLocaleDateString("tr-TR")}</span>
         <Icon name="chevron" size={16} color={T.text3}/>
+        {isAdmin && (
+          <button onClick={e=>{e.stopPropagation();setConfirmDelete({ticket:t});}} title="Sil" style={{ background:"#EF444420", border:"1px solid #EF444430", borderRadius:7, padding:"5px 7px", cursor:"pointer", color:"#EF4444", flexShrink:0, display:"flex", alignItems:"center" }}>
+            <Icon name="trash" size={13} color="#EF4444"/>
+          </button>
+        )}
       </div>
     );
   };
@@ -922,10 +994,15 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
 
     return (
       <div>
-        <div style={{ marginBottom:20 }}>
+        <div style={{ marginBottom:20, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <button onClick={()=>setSel(null)} style={{ background:"none", border:"none", cursor:"pointer", color:T.text3, fontSize:14, display:"flex", alignItems:"center", gap:6, padding:0 }}>
             ← Taleplere Dön
           </button>
+          {isAdmin && (
+            <button onClick={()=>setConfirmDelete({ticket:sel})} style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 16px", borderRadius:10, border:"1px solid #EF444440", background:"#EF444415", color:"#EF4444", fontSize:13, fontWeight:600, cursor:"pointer" }}>
+              <Icon name="trash" size={14} color="#EF4444"/> Ticketı Sil
+            </button>
+          )}
         </div>
 
         <div style={{ display:"grid", gridTemplateColumns:"1fr 320px", gap:20 }}>
@@ -1271,6 +1348,19 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
           </div>
         </Modal>
       )}
+
+      {/* Ticket silme onay modalı */}
+      {confirmDelete && (
+        <ConfirmModal
+          title="Ticketı Sil"
+          message={`"${confirmDelete.ticket.no} — ${confirmDelete.ticket.title}" ticketını kalıcı olarak silmek istediğinizden emin misiniz?`}
+          detail="⚠️ Bu işlem geri alınamaz. Ticketa ait tüm e-posta yazışmaları ve efor kayıtları da silinecektir."
+          confirmLabel="Evet, Sil"
+          loading={deleting}
+          onConfirm={()=>deleteTicket(confirmDelete.ticket)}
+          onClose={()=>setConfirmDelete(null)}
+        />
+      )}
     </div>
   );
 };
@@ -1322,11 +1412,13 @@ const DashboardPage = ({ profile, tickets, companies, consultants }) => {
 const CompaniesPage = ({ profile, companies, reloadCompanies, allUsers = [], tickets = [] }) => {
   const isAdmin = profile?.role === "admin";
   const [showModal, setShowModal] = useState(false);
-  const [selCompany, setSelCompany] = useState(null); // firma detay
+  const [selCompany, setSelCompany] = useState(null);
   const [form, setForm] = useState({ name:"", email:"", phone:"", address:"" });
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState({});
+  const [confirmDelCompany, setConfirmDelCompany] = useState(null);
+  const [deletingCompany, setDeletingCompany]     = useState(false);
 
   const save = async () => {
     if (!form.name) return;
@@ -1348,12 +1440,45 @@ const CompaniesPage = ({ profile, companies, reloadCompanies, allUsers = [], tic
     reloadCompanies();
   };
 
-  const deleteCompany = async (id) => {
-    if (!window.confirm("Bu firmayı silmek istediğinizden emin misiniz?")) return;
-    await supabase.from("companies").delete().eq("id", id);
-    showToast("Firma silindi!");
-    setSelCompany(null);
-    reloadCompanies();
+  const deleteCompany = async (company) => {
+    setDeletingCompany(true);
+    try {
+      const id = company.id;
+      // 1. Firmaya ait ticketların mesajlarını sil
+      const { data: firmaTkts } = await supabase.from("tickets").select("id,no").eq("company_id", id);
+      if (firmaTkts?.length) {
+        for (const t of firmaTkts) {
+          await supabase.from("ticket_messages").delete().eq("ticket_id", t.id);
+          if (t.no) await supabase.from("time_entries").delete().eq("ticket_no", t.no);
+        }
+        const ids = firmaTkts.map(t=>t.id);
+        await supabase.from("tickets").delete().in("id", ids);
+      }
+      // 2. Projelere ait eforları sil
+      const { data: firmaPrjs } = await supabase.from("projects").select("id").eq("company_id", id);
+      if (firmaPrjs?.length) {
+        const prjIds = firmaPrjs.map(p=>p.id);
+        await supabase.from("project_efors").delete().in("project_id", prjIds);
+        await supabase.from("projects").delete().in("id", prjIds);
+      }
+      // 3. Efor kayıtları
+      await supabase.from("time_entries").delete().eq("company_id", id);
+      // 4. Faturalar
+      await supabase.from("invoices").delete().eq("company_id", id);
+      // 5. Bildirimler
+      await supabase.from("notifications").delete().eq("company_id", id);
+      // 6. Firmayı sil
+      const { error } = await supabase.from("companies").delete().eq("id", id);
+      if (error) throw error;
+      showToast(`${company.name} firmasi silindi!`);
+      setConfirmDelCompany(null);
+      setSelCompany(null);
+      reloadCompanies();
+    } catch(err) {
+      showToast(err.message, "error");
+    } finally {
+      setDeletingCompany(false);
+    }
   };
 
   // Firma detay görünümü
@@ -1386,7 +1511,7 @@ const CompaniesPage = ({ profile, companies, reloadCompanies, allUsers = [], tic
               <Btn variant="ghost" size="sm" onClick={()=>{ setEditMode(true); setEditForm({ name:selCompany.name, email:selCompany.email||"", phone:selCompany.phone||"", address:selCompany.address||"" }); }}>
                 <Icon name="edit" size={14}/> Düzenle
               </Btn>
-              <Btn variant="danger" size="sm" onClick={()=>deleteCompany(selCompany.id)}>
+              <Btn variant="danger" size="sm" onClick={()=>setConfirmDelCompany(selCompany)}>
                 <Icon name="trash" size={14}/> Sil
               </Btn>
             </div>
@@ -1597,11 +1722,22 @@ const CompaniesPage = ({ profile, companies, reloadCompanies, allUsers = [], tic
           </div>
         </Modal>
       )}
+
+      {/* Firma silme onay modalı */}
+      {confirmDelCompany && (
+        <ConfirmModal
+          title="Firmayı Sil"
+          message={`"${confirmDelCompany.name}" firmasını kalıcı olarak silmek istediğinizden emin misiniz?`}
+          detail="⚠️ Bu işlem geri alınamaz. Firmaya ait TÜM ticketlar, yazışmalar, efor kayıtları, faturalar ve projeler de silinecektir."
+          confirmLabel="Evet, Sil"
+          loading={deletingCompany}
+          onConfirm={()=>deleteCompany(confirmDelCompany)}
+          onClose={()=>setConfirmDelCompany(null)}
+        />
+      )}
     </div>
   );
 };
-
-// ─── CONSULTANT DROPDOWN LISTBOX ─────────────────────────────────────────────
 const ConsultantDropdown = ({ consultants, selected, onChange }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -2302,6 +2438,31 @@ const InvoicesPage = ({ companies, consultants, tickets }) => {
     load();
   };
 
+  const [confirmDelInvoice, setConfirmDelInvoice] = useState(null);
+  const [deletingInvoice, setDeletingInvoice]     = useState(false);
+
+  const deleteInvoice = async (inv) => {
+    setDeletingInvoice(true);
+    try {
+      // Faturaya bağlı eforları tekrar "faturalanmadı" yap
+      const items = Array.isArray(inv.items) ? inv.items : [];
+      const ticketNos = [...new Set(items.map(it => it.ticket_no).filter(Boolean))];
+      if (ticketNos.length > 0) {
+        await supabase.from("time_entries").update({ billed: false }).in("ticket_no", ticketNos).eq("company_id", inv.company_id);
+      }
+      // Faturayı sil
+      const { error } = await supabase.from("invoices").delete().eq("id", inv.id);
+      if (error) throw error;
+      showToast(`${inv.invoice_no || "Fatura"} silindi!`);
+      setConfirmDelInvoice(null);
+      load();
+    } catch(err) {
+      showToast(err.message, "error");
+    } finally {
+      setDeletingInvoice(false);
+    }
+  };
+
   const totalAmount = invoices.reduce((s,i)=>s+(parseFloat(i.total)||0),0);
   const paidAmount  = invoices.filter(i=>i.paid).reduce((s,i)=>s+(parseFloat(i.total)||0),0);
 
@@ -2398,6 +2559,9 @@ const InvoicesPage = ({ companies, consultants, tickets }) => {
                 </button>
                 <button onClick={()=>togglePaid(inv)} title={inv.paid?"Ödenmedi":"Ödendi"} style={{ background:inv.paid?`${T.warning}20`:`${T.success}20`, border:"none", borderRadius:6, padding:"5px 8px", cursor:"pointer", color:inv.paid?T.warning:T.success, fontSize:12, fontWeight:600 }}>
                   {inv.paid?"↺":"✓"}
+                </button>
+                <button onClick={()=>setConfirmDelInvoice(inv)} title="Sil" style={{ background:"#EF444420", border:"1px solid #EF444430", borderRadius:6, padding:"5px 7px", cursor:"pointer", color:"#EF4444", display:"flex", alignItems:"center" }}>
+                  <Icon name="trash" size={13} color="#EF4444"/>
                 </button>
               </div>
             </div>
@@ -2522,6 +2686,19 @@ const InvoicesPage = ({ companies, consultants, tickets }) => {
           invoice={viewInvoice}
           company={companies.find(c=>c.id===viewInvoice.company_id)}
           onClose={()=>setViewInvoice(null)}
+        />
+      )}
+
+      {/* Fatura silme onay modalı */}
+      {confirmDelInvoice && (
+        <ConfirmModal
+          title="Faturayı Sil"
+          message={`"${confirmDelInvoice.invoice_no || confirmDelInvoice.id?.slice(0,8)}" numaralı faturayı kalıcı olarak silmek istediğinizden emin misiniz?`}
+          detail="⚠️ Bu işlem geri alınamaz. Bu faturada yer alan eforlar tekrar 'Bekliyor' durumuna döner ve yeniden faturalanabilir hale gelir."
+          confirmLabel="Evet, Sil"
+          loading={deletingInvoice}
+          onConfirm={()=>deleteInvoice(confirmDelInvoice)}
+          onClose={()=>setConfirmDelInvoice(null)}
         />
       )}
     </div>
@@ -3642,6 +3819,7 @@ export default function App() {
         input[type=date]::-webkit-calendar-picker-indicator { filter:${themeT.bg === "#F0F4FB" ? "none" : "invert(0.5)"}; }
         select option { background:${themeT.bg2}; color:${themeT.text}; }
         @keyframes slideIn { from { transform:translateY(20px); opacity:0; } to { transform:translateY(0); opacity:1; } }
+        @keyframes cfSpin   { to { transform: rotate(360deg); } }
       `}</style>
       <div style={{ display:"flex", minHeight:"100vh" }}>
         <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} unreadCount={unreadCount}/>
