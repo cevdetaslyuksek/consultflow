@@ -1212,10 +1212,15 @@ const DashboardPage = ({ profile, tickets, companies, consultants }) => {
   );
 };
 
-const CompaniesPage = ({ profile, companies, reloadCompanies }) => {
+const CompaniesPage = ({ profile, companies, reloadCompanies, allUsers = [], tickets = [] }) => {
+  const isAdmin = profile?.role === "admin";
   const [showModal, setShowModal] = useState(false);
+  const [selCompany, setSelCompany] = useState(null); // firma detay
   const [form, setForm] = useState({ name:"", email:"", phone:"", address:"" });
   const [saving, setSaving] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState({});
+
   const save = async () => {
     if (!form.name) return;
     setSaving(true);
@@ -1224,23 +1229,254 @@ const CompaniesPage = ({ profile, companies, reloadCompanies }) => {
     if (error) { showToast(error.message,"error"); return; }
     showToast("Firma eklendi!"); setShowModal(false); setForm({ name:"",email:"",phone:"",address:"" }); reloadCompanies();
   };
+
+  const saveEdit = async () => {
+    setSaving(true);
+    const { error } = await supabase.from("companies").update(editForm).eq("id", selCompany.id);
+    setSaving(false);
+    if (error) { showToast(error.message,"error"); return; }
+    showToast("Firma güncellendi!");
+    setEditMode(false);
+    setSelCompany(p=>({...p,...editForm}));
+    reloadCompanies();
+  };
+
+  const deleteCompany = async (id) => {
+    if (!window.confirm("Bu firmayı silmek istediğinizden emin misiniz?")) return;
+    await supabase.from("companies").delete().eq("id", id);
+    showToast("Firma silindi!");
+    setSelCompany(null);
+    reloadCompanies();
+  };
+
+  // Firma detay görünümü
+  if (selCompany) {
+    const employees  = allUsers.filter(u => u.company_id === selCompany.id);
+    const coTickets  = tickets.filter(t => t.company_id === selCompany.id);
+    const openT      = coTickets.filter(t => t.status !== "Closed").length;
+    const closedT    = coTickets.filter(t => t.status === "Closed").length;
+    const ROLE_LABELS = { admin:"Yönetici", consultant:"Danışman", customer:"Müşteri" };
+    const ROLE_COLORS = { admin:"#A855F7", consultant:"#0EA5E9", customer:"#10B981" };
+
+    return (
+      <div>
+        {/* Header */}
+        <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:24 }}>
+          <button onClick={()=>{ setSelCompany(null); setEditMode(false); }} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:8, padding:"8px 14px", cursor:"pointer", color:T.text2, fontSize:13, display:"flex", alignItems:"center", gap:6 }}>
+            ← Geri
+          </button>
+          <div style={{ flex:1, display:"flex", alignItems:"center", gap:14 }}>
+            <div style={{ width:52, height:52, borderRadius:14, background:T.grad, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, fontWeight:800, color:"#fff" }}>
+              {selCompany.name[0].toUpperCase()}
+            </div>
+            <div>
+              <h2 style={{ margin:0, fontSize:22, fontWeight:800, color:T.text }}>{selCompany.name}</h2>
+              <span style={{ fontSize:13, color:T.text3 }}>{employees.length} çalışan · {coTickets.length} talep</span>
+            </div>
+          </div>
+          {isAdmin && (
+            <div style={{ display:"flex", gap:8 }}>
+              <Btn variant="ghost" size="sm" onClick={()=>{ setEditMode(true); setEditForm({ name:selCompany.name, email:selCompany.email||"", phone:selCompany.phone||"", address:selCompany.address||"" }); }}>
+                <Icon name="edit" size={14}/> Düzenle
+              </Btn>
+              <Btn variant="danger" size="sm" onClick={()=>deleteCompany(selCompany.id)}>
+                <Icon name="trash" size={14}/> Sil
+              </Btn>
+            </div>
+          )}
+        </div>
+
+        {/* Edit form */}
+        {editMode && (
+          <div style={{ background:T.card, border:`1px solid ${T.accent}`, borderRadius:14, padding:20, marginBottom:20 }}>
+            <h4 style={{ margin:"0 0 16px", color:T.text }}>Firma Bilgilerini Düzenle</h4>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+              <Inp label="Firma Adı" value={editForm.name} onChange={e=>setEditForm(p=>({...p,name:e.target.value}))}/>
+              <Inp label="E-posta" value={editForm.email} onChange={e=>setEditForm(p=>({...p,email:e.target.value}))}/>
+              <Inp label="Telefon" value={editForm.phone} onChange={e=>setEditForm(p=>({...p,phone:e.target.value}))}/>
+              <Inp label="Adres" value={editForm.address} onChange={e=>setEditForm(p=>({...p,address:e.target.value}))}/>
+            </div>
+            <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:12 }}>
+              <Btn variant="ghost" size="sm" onClick={()=>setEditMode(false)}>İptal</Btn>
+              <Btn size="sm" onClick={saveEdit} disabled={saving}>{saving?"Kaydediliyor...":"Kaydet"}</Btn>
+            </div>
+          </div>
+        )}
+
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16 }}>
+          {/* Sol: Firma bilgileri + istatistikler */}
+          <div style={{ display:"flex", flexDirection:"column", gap:14 }}>
+            {/* Firma Bilgileri */}
+            <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:20 }}>
+              <h4 style={{ margin:"0 0 14px", fontSize:14, fontWeight:700, color:T.text }}>Firma Bilgileri</h4>
+              {[
+                ["E-posta", selCompany.email||"—"],
+                ["Telefon", selCompany.phone||"—"],
+                ["Adres",   selCompany.address||"—"],
+              ].map(([k,v])=>(
+                <div key={k} style={{ display:"flex", justifyContent:"space-between", padding:"7px 0", borderBottom:`1px solid ${T.border}` }}>
+                  <span style={{ fontSize:13, color:T.text3 }}>{k}</span>
+                  <span style={{ fontSize:13, color:T.text, fontWeight:500 }}>{v}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* İstatistikler */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+              {[
+                { label:"Toplam Talep",  value:coTickets.length,  color:T.accent2 },
+                { label:"Açık Talep",    value:openT,              color:"#60A5FA" },
+                { label:"Kapalı Talep",  value:closedT,            color:T.success },
+                { label:"Çalışan Sayısı",value:employees.length,   color:T.teal },
+              ].map(s=>(
+                <div key={s.label} style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"14px 16px" }}>
+                  <div style={{ fontSize:26, fontWeight:800, color:s.color }}>{s.value}</div>
+                  <div style={{ fontSize:11, color:T.text3, marginTop:3 }}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Son Talepler */}
+            <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:20 }}>
+              <h4 style={{ margin:"0 0 14px", fontSize:14, fontWeight:700, color:T.text }}>Son Talepler</h4>
+              {coTickets.length === 0
+                ? <div style={{ color:T.text3, fontSize:13 }}>Talep yok</div>
+                : coTickets.slice(0,5).map(t => {
+                  const sc = STATUS_CONFIG[t.status]||STATUS_CONFIG.Open;
+                  const pc = PRIORITY_CONFIG[t.priority]||PRIORITY_CONFIG.Medium;
+                  return (
+                    <div key={t.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 0", borderBottom:`1px solid ${T.border}` }}>
+                      <span style={{ fontSize:11, color:T.text3, fontFamily:"monospace", minWidth:80 }}>{t.no}</span>
+                      <span style={{ flex:1, fontSize:13, color:T.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{t.title}</span>
+                      <Badge color={sc.color} bg={sc.bg}>{sc.label}</Badge>
+                    </div>
+                  );
+                })
+              }
+            </div>
+          </div>
+
+          {/* Sağ: Çalışanlar */}
+          <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:20 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16 }}>
+              <h4 style={{ margin:0, fontSize:14, fontWeight:700, color:T.text }}>
+                Çalışanlar
+                <span style={{ marginLeft:8, fontSize:12, color:T.text3 }}>({employees.length})</span>
+              </h4>
+              {isAdmin && (
+                <div style={{ fontSize:12, color:T.text3 }}>
+                  Kullanıcı Yönetimi'nden ekleyebilirsiniz
+                </div>
+              )}
+            </div>
+
+            {employees.length === 0 ? (
+              <div style={{ textAlign:"center", padding:"40px 20px", color:T.text3 }}>
+                <Icon name="users" size={40} color={T.text3}/>
+                <p style={{ marginTop:12, fontSize:13 }}>Bu firmaya kayıtlı kullanıcı yok</p>
+                {isAdmin && <p style={{ fontSize:12, color:T.text3 }}>Kullanıcı Yönetimi sayfasından çalışan ekleyebilirsiniz</p>}
+              </div>
+            ) : (
+              employees.map(u => {
+                const rc_color = ROLE_COLORS[u.role]||T.text3;
+                const myTickets = coTickets.filter(t => {
+                  const a = Array.isArray(t.assignees) ? t.assignees : (t.assignee?[t.assignee]:[]);
+                  // Müşteri kendi açtığı ticketlar sayılır (basit: company_id eşleşiyor)
+                  return t.company_id === selCompany.id;
+                });
+                const openForUser = coTickets.filter(t => t.status !== "Closed").length;
+                return (
+                  <div key={u.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 14px", background:T.bg3, borderRadius:12, marginBottom:8, border:`1px solid ${T.border}` }}>
+                    <div style={{ width:40, height:40, borderRadius:"50%", background:`${rc_color}25`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, fontWeight:700, color:rc_color, flexShrink:0 }}>
+                      {(u.full_name||u.email||"?")[0].toUpperCase()}
+                    </div>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:14, fontWeight:700, color:T.text }}>{u.full_name||"—"}</div>
+                      <div style={{ fontSize:12, color:T.text3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{u.email}</div>
+                    </div>
+                    <div style={{ textAlign:"right", flexShrink:0 }}>
+                      <span style={{ display:"block", fontSize:11, fontWeight:700, color:rc_color, background:rc_color+"20", padding:"2px 8px", borderRadius:10, marginBottom:3 }}>
+                        {ROLE_LABELS[u.role]||u.role}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+
+            {/* Fatura notu */}
+            <div style={{ marginTop:16, background:`${T.teal}10`, border:`1px solid ${T.teal}30`, borderRadius:10, padding:"12px 14px" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                <Icon name="invoice" size={15} color={T.teal}/>
+                <span style={{ fontSize:13, fontWeight:700, color:T.teal }}>Faturalama Notu</span>
+              </div>
+              <p style={{ margin:0, fontSize:12, color:T.text2, lineHeight:1.6 }}>
+                {employees.length > 0
+                  ? `${selCompany.name} bünyesindeki tüm çalışanlar (${employees.map(u=>u.full_name||u.email).join(", ")}) aynı firmaya bağlı olduğundan açtıkları tüm talepler tek bir fatura altında toplanabilir.`
+                  : "Firma çalışanları eklendiğinde tüm talepler bu firma adına faturaya dahil edilebilir."
+                }
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Liste görünümü
   return (
     <div>
-      <PageHeader title="Firmalar" subtitle={`${companies.length} firma`} action={profile?.role==="admin" && <Btn onClick={()=>setShowModal(true)}><Icon name="plus" size={15}/> Firma Ekle</Btn>}/>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:14 }}>
-        {companies.map(c=>(
-          <div key={c.id} style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:20, transition:"all 0.2s" }}
-            onMouseEnter={e=>e.currentTarget.style.borderColor=T.border2}
-            onMouseLeave={e=>e.currentTarget.style.borderColor=T.border}>
-            <div style={{ width:44, height:44, borderRadius:12, background:T.grad, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, fontWeight:800, color:"#fff", marginBottom:12 }}>
-              {c.name[0].toUpperCase()}
+      <PageHeader title="Firmalar" subtitle={`${companies.length} firma`} action={isAdmin && <Btn onClick={()=>setShowModal(true)}><Icon name="plus" size={15}/> Firma Ekle</Btn>}/>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))", gap:14 }}>
+        {companies.map(c => {
+          const empCount  = allUsers.filter(u=>u.company_id===c.id).length;
+          const tktCount  = tickets.filter(t=>t.company_id===c.id).length;
+          const openCount = tickets.filter(t=>t.company_id===c.id&&t.status!=="Closed").length;
+          const emps      = allUsers.filter(u=>u.company_id===c.id).slice(0,4);
+          return (
+            <div key={c.id}
+              onClick={()=>setSelCompany(c)}
+              style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:20, cursor:"pointer", transition:"all 0.2s" }}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=T.accent;e.currentTarget.style.transform="translateY(-2px)";}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="";}}
+            >
+              <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:12 }}>
+                <div style={{ width:44, height:44, borderRadius:12, background:T.grad, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, fontWeight:800, color:"#fff" }}>
+                  {c.name[0].toUpperCase()}
+                </div>
+                {openCount > 0 && (
+                  <span style={{ fontSize:11, fontWeight:700, color:"#60A5FA", background:"#60A5FA20", padding:"3px 10px", borderRadius:20 }}>
+                    {openCount} açık talep
+                  </span>
+                )}
+              </div>
+              <h3 style={{ margin:"0 0 4px", fontSize:16, fontWeight:700, color:T.text }}>{c.name}</h3>
+              {c.email && <p style={{ margin:"0 0 12px", fontSize:12, color:T.text3 }}>{c.email}</p>}
+
+              {/* Çalışan avatarları */}
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:10 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:4 }}>
+                  {emps.length === 0
+                    ? <span style={{ fontSize:12, color:T.text3 }}>Çalışan yok</span>
+                    : (
+                      <>
+                        <div style={{ display:"flex" }}>
+                          {emps.map((u,i) => (
+                            <div key={u.id} title={u.full_name||u.email} style={{ width:26, height:26, borderRadius:"50%", background:`${T.teal}30`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, color:T.teal, marginLeft:i===0?0:-8, border:`2px solid ${T.card}`, zIndex:emps.length-i }}>
+                              {(u.full_name||u.email||"?")[0].toUpperCase()}
+                            </div>
+                          ))}
+                        </div>
+                        <span style={{ fontSize:12, color:T.text3, marginLeft:6 }}>{empCount} çalışan</span>
+                      </>
+                    )
+                  }
+                </div>
+                <span style={{ fontSize:12, color:T.text3 }}>{tktCount} talep</span>
+              </div>
             </div>
-            <h3 style={{ margin:"0 0 6px", fontSize:16, fontWeight:700, color:T.text }}>{c.name}</h3>
-            {c.email && <p style={{ margin:"0 0 4px", fontSize:13, color:T.text3 }}>{c.email}</p>}
-            {c.phone && <p style={{ margin:"0 0 4px", fontSize:13, color:T.text3 }}>{c.phone}</p>}
-            {c.address && <p style={{ margin:0, fontSize:13, color:T.text3 }}>{c.address}</p>}
-          </div>
-        ))}
+          );
+        })}
       </div>
       {showModal && (
         <Modal title="Firma Ekle" onClose={()=>setShowModal(false)}>
@@ -2546,7 +2782,7 @@ export default function App() {
   const renderPage = () => {
     switch(page) {
       case "dashboard":  return <DashboardPage profile={profile} tickets={tickets} companies={companies} consultants={consultants}/>;
-      case "companies":  return <CompaniesPage profile={profile} companies={companies} reloadCompanies={loadAll}/>;
+      case "companies":  return <CompaniesPage profile={profile} companies={companies} reloadCompanies={loadAll} allUsers={allUsers} tickets={tickets}/>;
       case "tickets":    return <TicketsPage profile={profile} companies={companies} consultants={consultants} reload={loadAll} tickets={tickets} allUsers={allUsers}/>;
       case "timesheet":  return <TimesheetPage profile={profile} companies={companies} consultants={consultants} tickets={tickets}/>;
       case "invoices":   return <InvoicesPage companies={companies} consultants={consultants} tickets={tickets}/>;
