@@ -1795,6 +1795,117 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
         ))}
       </div>
 
+      {/* ── GÜNLÜK EFOR GRAFİĞİ ── */}
+      {entries.length > 0 && (() => {
+        const days = [];
+        const from = new Date(range.from + "T00:00:00");
+        const to   = new Date(range.to   + "T00:00:00");
+        for (let d = new Date(from); d <= to; d.setDate(d.getDate()+1)) {
+          days.push(d.toISOString().slice(0,10));
+        }
+        const CONS_COLORS = ["#6366F1","#0EA5E9","#10B981","#F59E0B","#EF4444","#A855F7","#EC4899","#14B8A6"];
+        const consNames = [...new Set(entries.map(e=>e.consultant))];
+        const dayData = days.map(day => {
+          const byDay = entries.filter(e=>e.date===day);
+          const byDanışman = {};
+          consNames.forEach(cn => { byDanışman[cn] = byDay.filter(e=>e.consultant===cn).reduce((s,e)=>s+parseFloat(e.hours||0),0); });
+          return { day, total: byDay.reduce((s,e)=>s+parseFloat(e.hours||0),0), byDanışman };
+        });
+        const maxH = Math.max(...dayData.map(d=>d.total), 1);
+        const visibleDays = periodMode === "monthly" ? dayData.filter(d=>d.total>0) : dayData;
+        if (visibleDays.length === 0) return null;
+        const barW  = Math.max(28, Math.min(56, Math.floor(680/visibleDays.length)-6));
+        const chartH = 160;
+        const today = new Date().toISOString().slice(0,10);
+
+        return (
+          <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:20, marginBottom:16 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:16, flexWrap:"wrap", gap:10 }}>
+              <h4 style={{ margin:0, fontSize:14, fontWeight:700, color:T.text, display:"flex", alignItems:"center", gap:8 }}>
+                <Icon name="activity" size={16} color={T.accent2}/>
+                Günlük Efor Dağılımı
+              </h4>
+              {consNames.length > 1 && (
+                <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
+                  {consNames.map((cn,i) => (
+                    <div key={cn} style={{ display:"flex", alignItems:"center", gap:5 }}>
+                      <div style={{ width:10, height:10, borderRadius:2, background:CONS_COLORS[i%CONS_COLORS.length], flexShrink:0 }}/>
+                      <span style={{ fontSize:11, color:T.text3 }}>{cn.split(" ")[0]}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ overflowX:"auto", paddingBottom:4 }}>
+              <div style={{ display:"flex", alignItems:"flex-end", gap:4, minWidth: visibleDays.length*(barW+4), paddingLeft:28, paddingBottom:0, position:"relative" }}>
+                {/* Y ekseni yardım çizgileri */}
+                {[0.25,0.5,0.75,1].map(frac => (
+                  <div key={frac} style={{ position:"absolute", left:0, right:0, bottom: chartH*frac + 28, height:1, background:T.border, opacity:0.4, zIndex:0 }}>
+                    <span style={{ position:"absolute", left:0, top:-8, fontSize:9, color:T.text3, whiteSpace:"nowrap" }}>{(maxH*frac).toFixed(1)}h</span>
+                  </div>
+                ))}
+                {visibleDays.map((d) => {
+                  const isToday = d.day === today;
+                  const dateObj  = new Date(d.day + "T00:00:00");
+                  const label = periodMode==="monthly"
+                    ? dateObj.toLocaleDateString("tr-TR",{day:"2-digit",month:"short"})
+                    : dateObj.toLocaleDateString("tr-TR",{weekday:"short",day:"numeric"});
+                  const segments = consNames
+                    .map((cn,ci) => ({ cn, h:d.byDanışman[cn]||0, color:CONS_COLORS[ci%CONS_COLORS.length] }))
+                    .filter(s=>s.h>0);
+                  const totalBarH = Math.max(d.total>0?4:0, (d.total/maxH)*chartH);
+
+                  return (
+                    <div key={d.day} style={{ display:"flex", flexDirection:"column", alignItems:"center", flex:"0 0 auto", width:barW, zIndex:2 }}>
+                      {d.total > 0
+                        ? <div style={{ fontSize:10, fontWeight:700, color:isToday?T.accent2:T.text2, marginBottom:2, whiteSpace:"nowrap" }}>{d.total%1===0?d.total:d.total.toFixed(1)}h</div>
+                        : <div style={{ height:16 }}/>
+                      }
+                      {/* Bar alanı — sabit yükseklik chartH */}
+                      <div style={{ width:"100%", height:chartH, display:"flex", flexDirection:"column", justifyContent:"flex-end" }}>
+                        {d.total > 0 ? (
+                          <div style={{ width:"100%", height:totalBarH, borderRadius:"4px 4px 0 0", overflow:"hidden", display:"flex", flexDirection:"column-reverse", boxShadow: isToday?`0 0 8px ${T.accent}60`:"none" }}>
+                            {segments.map(seg => (
+                              <div key={seg.cn} title={`${seg.cn}: ${seg.h}h`}
+                                style={{ width:"100%", height: Math.max(2,(seg.h/maxH)*chartH), background:seg.color, flexShrink:0 }}/>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ width:"100%", height:3, borderRadius:2, background:T.border }}/>
+                        )}
+                      </div>
+                      {/* Tarih */}
+                      <div style={{ marginTop:5, fontSize:9, color:isToday?T.accent2:T.text3, fontWeight:isToday?700:400, textAlign:"center", lineHeight:1.3, whiteSpace:"nowrap" }}>
+                        {label}
+                        {isToday && <div style={{ width:4, height:4, borderRadius:"50%", background:T.accent2, margin:"2px auto 0" }}/>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Danışman bazlı özet */}
+            {consNames.length > 1 && (
+              <div style={{ display:"flex", gap:8, marginTop:14, flexWrap:"wrap", paddingTop:14, borderTop:`1px solid ${T.border}` }}>
+                {consNames.map((cn,i) => {
+                  const tot = entries.filter(e=>e.consultant===cn).reduce((s,e)=>s+parseFloat(e.hours||0),0);
+                  const pct = totalH>0 ? Math.round(tot/totalH*100) : 0;
+                  return (
+                    <div key={cn} style={{ flex:1, minWidth:120, background:T.bg3, borderRadius:10, padding:"10px 14px", borderLeft:`3px solid ${CONS_COLORS[i%CONS_COLORS.length]}` }}>
+                      <div style={{ fontSize:12, fontWeight:600, color:T.text2, marginBottom:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{cn}</div>
+                      <div style={{ fontSize:20, fontWeight:800, color:CONS_COLORS[i%CONS_COLORS.length] }}>{tot}h</div>
+                      <div style={{ fontSize:11, color:T.text3 }}>%{pct} toplam</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, overflow:"hidden" }}>
         <div style={{ padding:"12px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"110px 1fr 130px 120px 70px 110px", gap:12, fontSize:12, fontWeight:700, color:T.text3 }}>
           <span>Tarih</span><span>Ticket / Açıklama</span><span>Danışman</span><span>Firma</span><span>Saat</span><span>Durum</span>
