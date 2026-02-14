@@ -2497,8 +2497,11 @@ const UsersPage = ({ companies, onReload }) => {
     if (!form.email || !form.password || !form.full_name) {
       showToast("E-posta, şifre ve ad zorunlu", "error"); return;
     }
+    if (form.role === "customer" && !form.company_id) {
+      showToast("Müşteri için firma seçin", "error"); return;
+    }
     setCreating(true);
-    // Use Supabase admin signup via auth API
+
     const { data, error } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,
@@ -2508,15 +2511,27 @@ const UsersPage = ({ companies, onReload }) => {
     });
     if (error) { showToast(error.message,"error"); setCreating(false); return; }
 
-    // Upsert profile
     if (data.user) {
-      await supabase.from("profiles").upsert({
+      // Kısa bekle — trigger profiles satırını oluştursun
+      await new Promise(r => setTimeout(r, 800));
+
+      // Önce upsert (yoksa oluştur)
+      const { error: upsertErr } = await supabase.from("profiles").upsert({
         id: data.user.id,
         email: form.email,
         full_name: form.full_name,
         role: form.role,
         company_id: form.role === "customer" ? form.company_id : null,
-      });
+      }, { onConflict: "id" });
+
+      // Upsert sonrası update ile kesinleştir (trigger ezüstüne yazmış olabilir)
+      if (!upsertErr) {
+        await supabase.from("profiles").update({
+          full_name: form.full_name,
+          role: form.role,
+          company_id: form.role === "customer" ? form.company_id : null,
+        }).eq("id", data.user.id);
+      }
     }
     setCreating(false);
     showToast("Kullanıcı oluşturuldu!");
@@ -2749,7 +2764,7 @@ export default function App() {
     const { data: cons } = await supabase.from("profiles").select("id, full_name, email").eq("role", "consultant");
     setConsultants((cons || []).map(c => ({ id: c.id, name: c.full_name || c.email, email: c.email })));
     // All users (for email autocomplete)
-    const { data: allProfs } = await supabase.from("profiles").select("id, full_name, email, role");
+    const { data: allProfs } = await supabase.from("profiles").select("id, full_name, email, role, company_id");
     setAllUsers((allProfs || []).filter(u => u.email));
     setLoading(false);
   };
