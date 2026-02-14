@@ -2805,15 +2805,21 @@ const NotificationsPage = ({ profile, companies, consultants }) => {
 
   const loadNotifs = async () => {
     setLoading(true);
-    let q = supabase.from("notifications").select("*").order("created_at", { ascending: false }).limit(100);
-    if (profile?.role === "consultant") {
-      q = q.or(`recipient_id.eq.${profile.id},recipient_id.is.null`);
-    } else if (profile?.role === "customer") {
-      q = q.eq("company_id", profile.company_id);
+    try {
+      let q = supabase.from("notifications").select("*").order("created_at", { ascending: false }).limit(100);
+      if (profile?.role === "consultant") {
+        q = q.or(`recipient_id.eq.${profile.id},recipient_id.is.null`);
+      } else if (profile?.role === "customer") {
+        q = q.eq("company_id", profile.company_id);
+      }
+      const { data } = await q;
+      setNotifs(data || []);
+    } catch(err) {
+      console.warn("Notifications table not ready:", err);
+      setNotifs([]);
+    } finally {
+      setLoading(false);
     }
-    const { data } = await q;
-    setNotifs(data || []);
-    setLoading(false);
   };
 
   const markRead = async (id) => {
@@ -2925,9 +2931,10 @@ const NotificationsPage = ({ profile, companies, consultants }) => {
 // Bildirim oluşturma yardımcı fonksiyonu
 const createNotification = async ({ type, message, detail="", company_id=null, recipient_id=null, ref_id=null, ref_type=null }) => {
   try {
-    await supabase.from("notifications").insert([{
+    const { error } = await supabase.from("notifications").insert([{
       type, message, detail, company_id, recipient_id, ref_id, ref_type, read: false
     }]);
+    if (error) console.warn("Notif insert:", error.message);
   } catch(e) { console.warn("Notif error:", e); }
 };
 
@@ -2969,16 +2976,24 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
 
   const load = async () => {
     setLoading(true);
-    let q = supabase.from("projects").select("*").order("created_at", { ascending:false });
-    if (isCustomer) q = q.eq("company_id", profile.company_id);
-    const { data } = await q;
-    setProjects(data || []);
-    setLoading(false);
+    try {
+      let q = supabase.from("projects").select("*").order("created_at", { ascending:false });
+      if (isCustomer) q = q.eq("company_id", profile.company_id);
+      const { data } = await q;
+      setProjects(data || []);
+    } catch(err) {
+      console.warn("Projects table not ready:", err);
+      setProjects([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const loadEfors = async (pid) => {
-    const { data } = await supabase.from("project_efors").select("*").eq("project_id", pid).order("date");
-    setEfors(data || []);
+    try {
+      const { data } = await supabase.from("project_efors").select("*").eq("project_id", pid).order("date");
+      setEfors(data || []);
+    } catch(err) { setEfors([]); }
   };
 
   const saveProject = async () => {
@@ -3354,24 +3369,31 @@ export default function App() {
   const loadAll = async (u = user, prof = profile) => {
     const p = prof || profile;
     if (!p) return;
-    // Tickets
-    let q = supabase.from("tickets").select("*").order("created_at", { ascending: false });
-    if (p?.role === "customer") q = q.eq("company_id", p.company_id);
-    const { data: tkts } = await q;
-    setTickets(tkts || []);
-    // Companies
-    const { data: cos } = await supabase.from("companies").select("*").order("name");
-    setCompanies(cos || []);
-    // Consultants
-    const { data: cons } = await supabase.from("profiles").select("id, full_name, email").eq("role", "consultant");
-    setConsultants((cons || []).map(c => ({ id: c.id, name: c.full_name || c.email, email: c.email })));
-    // All users (for email autocomplete)
-    const { data: allProfs } = await supabase.from("profiles").select("id, full_name, email, role, company_id");
-    setAllUsers((allProfs || []).filter(u => u.email));
-    // Unread notifications count
-    const { count } = await supabase.from("notifications").select("*", { count:"exact", head:true }).eq("read", false);
-    setUnreadCount(count || 0);
-    setLoading(false);
+    try {
+      // Tickets
+      let q = supabase.from("tickets").select("*").order("created_at", { ascending: false });
+      if (p?.role === "customer") q = q.eq("company_id", p.company_id);
+      const { data: tkts } = await q;
+      setTickets(tkts || []);
+      // Companies
+      const { data: cos } = await supabase.from("companies").select("*").order("name");
+      setCompanies(cos || []);
+      // Consultants
+      const { data: cons } = await supabase.from("profiles").select("id, full_name, email").eq("role", "consultant");
+      setConsultants((cons || []).map(c => ({ id: c.id, name: c.full_name || c.email, email: c.email })));
+      // All users (for email autocomplete)
+      const { data: allProfs } = await supabase.from("profiles").select("id, full_name, email, role, company_id");
+      setAllUsers((allProfs || []).filter(u => u.email));
+      // Unread notifications count — tablo yoksa sessizce geç
+      try {
+        const { count } = await supabase.from("notifications").select("*", { count:"exact", head:true }).eq("read", false);
+        setUnreadCount(count || 0);
+      } catch(_) { setUnreadCount(0); }
+    } catch(err) {
+      console.error("loadAll error:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleLogin = (u, prof) => {
