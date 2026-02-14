@@ -137,6 +137,10 @@ const Icon = ({ name, size = 16, color }) => {
     download:   <svg {...s} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
     trash:      <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>,
     edit:       <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+    bell:       <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>,
+    folder:     <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>,
+    activity:   <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
+    dotcircle:  <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>,
   };
   return icons[name] || null;
 };
@@ -262,17 +266,18 @@ const LoginPage = ({ onLogin }) => {
 };
 
 // ─── SIDEBAR ─────────────────────────────────────────────────────────────────
-const Sidebar = ({ page, setPage, profile, onLogout }) => {
+const Sidebar = ({ page, setPage, profile, onLogout, unreadCount = 0 }) => {
   const isAdmin = profile?.role === "admin";
   const isCons  = profile?.role === "consultant";
   const nav = [
-    { id:"dashboard", label:"Dashboard", icon:"dashboard" },
-    ...(!isAdmin && !isCons ? [] : [{ id:"companies", label:"Firmalar", icon:"companies" }]),
-    { id:"tickets",   label:"Talepler",  icon:"tickets" },
-    ...(!isAdmin && !isCons ? [] : [{ id:"timesheet",  label:"Efor Takip",  icon:"timesheet" }]),
-    ...(!isAdmin ? [] : [{ id:"invoices", label:"Faturalar",  icon:"invoice" }]),
-    ...(!isAdmin ? [] : [{ id:"reports",  label:"Raporlar",   icon:"reports" }]),
-    ...(!isAdmin ? [] : [{ id:"users",    label:"Kullanıcılar", icon:"userplus" }]),
+    { id:"dashboard", label:"Dashboard",    icon:"dashboard" },
+    ...(!isAdmin && !isCons ? [] : [{ id:"companies",  label:"Firmalar",     icon:"companies" }]),
+    { id:"tickets",   label:"Talepler",     icon:"tickets" },
+    { id:"projects",  label:"Projeler",     icon:"folder" },
+    ...(!isAdmin && !isCons ? [] : [{ id:"timesheet",  label:"Efor Takip",   icon:"timesheet" }]),
+    ...(!isAdmin ? [] : [{ id:"invoices",   label:"Faturalar",    icon:"invoice" }]),
+    ...(!isAdmin ? [] : [{ id:"reports",    label:"Raporlar",     icon:"reports" }]),
+    ...(!isAdmin ? [] : [{ id:"users",      label:"Kullanıcılar", icon:"userplus" }]),
   ];
   return (
     <div style={{ width:220, background:T.bg2, borderRight:`1px solid ${T.border}`, display:"flex", flexDirection:"column", flexShrink:0, height:"100vh", position:"sticky", top:0 }}>
@@ -306,6 +311,10 @@ const Sidebar = ({ page, setPage, profile, onLogout }) => {
           <div style={{ fontSize:13, fontWeight:600, color:T.text, marginBottom:2 }}>{profile?.full_name || profile?.email?.split("@")[0]}</div>
           <div style={{ fontSize:11, color:T.text3 }}>{profile?.role === "admin" ? "Yönetici" : profile?.role === "consultant" ? "Danışman" : "Müşteri"}</div>
         </div>
+        <button onClick={()=>setPage("notifications")} style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 12px", borderRadius:8, border:"none", cursor:"pointer", background: page==="notifications"?`${T.accent}20`:"transparent", color: page==="notifications"?T.accent2:T.text3, fontSize:13, marginBottom:4 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}><Icon name="bell" size={16} color={page==="notifications"?T.accent2:T.text3}/> Bildirimler</div>
+          {unreadCount > 0 && <span style={{ background:"#EF4444", color:"#fff", fontSize:11, fontWeight:700, padding:"1px 7px", borderRadius:20, minWidth:20, textAlign:"center" }}>{unreadCount > 9 ? "9+" : unreadCount}</span>}
+        </button>
         <button onClick={onLogout} style={{ width:"100%", display:"flex", alignItems:"center", gap:8, padding:"8px 12px", borderRadius:8, border:"none", cursor:"pointer", background:"transparent", color:T.text3, fontSize:13 }}>
           <Icon name="logout" size={16}/> Çıkış
         </button>
@@ -665,6 +674,13 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     await supabase.from("tickets").update({ status, closed_at: status==="Closed" ? new Date().toISOString():null }).eq("id", ticket.id);
     showToast("Durum: " + STATUS_CONFIG[status]?.label);
     setSel(p => p ? {...p, status} : p);
+    await createNotification({
+      type: "ticket_status",
+      message: `[${ticket.no}] ${ticket.title} — durum değişti: ${STATUS_CONFIG[status]?.label}`,
+      detail: `Değiştiren: ${profile.full_name||profile.email}`,
+      company_id: ticket.company_id,
+      ref_id: ticket.id, ref_type: "ticket"
+    });
     reloadAll();
   };
 
@@ -682,6 +698,14 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     const oldAssignees = Array.isArray(ticket.assignees) ? ticket.assignees : [];
     const newOnes = assignees.filter(a => !oldAssignees.includes(a));
     const company = companies.find(c=>c.id===ticket.company_id);
+    if (newOnes.length > 0) {
+      await createNotification({
+        type: "ticket_assigned",
+        message: `[${ticket.no}] ${ticket.title} — danışman atandı: ${newOnes.join(", ")}`,
+        company_id: ticket.company_id,
+        ref_id: ticket.id, ref_type: "ticket"
+      });
+    }
     for (const name of newOnes) {
       const cp = consultants.find(c=>c.name===name);
       if (cp?.email) notifyAssignment({ ticket, company, consultantEmail:cp.email, consultantName:name });
@@ -704,6 +728,13 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     setSavingEfor(false);
     if (error) { showToast(error.message,"error"); return; }
     showToast("Efor kaydedildi!");
+    await createNotification({
+      type: "efor_added",
+      message: `[${sel.no}] ${sel.title} — ${eforForm.hours}h efor eklendi`,
+      detail: `${profile.full_name||profile.email}: ${eforForm.description||""}`,
+      company_id: sel.company_id,
+      ref_id: sel.id, ref_type: "ticket"
+    });
     setShowEforForm(false);
     setEforForm({ date:new Date().toISOString().slice(0,10), hours:"", description:"", company_id:"" });
     loadEfors(sel.no);
@@ -2754,6 +2785,535 @@ const EditRoleForm = ({ user, companies, ROLE_CONFIG, onSave, onClose }) => {
   );
 };
 
+// ─── NOTIFICATIONS PAGE ───────────────────────────────────────────────────────
+const NotificationsPage = ({ profile, companies, consultants }) => {
+  const [notifs, setNotifs]   = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter]   = useState("all"); // all | unread | ticket | project | efor
+
+  useEffect(() => { loadNotifs(); }, []);
+
+  const loadNotifs = async () => {
+    setLoading(true);
+    let q = supabase.from("notifications").select("*").order("created_at", { ascending: false }).limit(100);
+    if (profile?.role === "consultant") {
+      q = q.or(`recipient_id.eq.${profile.id},recipient_id.is.null`);
+    } else if (profile?.role === "customer") {
+      q = q.eq("company_id", profile.company_id);
+    }
+    const { data } = await q;
+    setNotifs(data || []);
+    setLoading(false);
+  };
+
+  const markRead = async (id) => {
+    await supabase.from("notifications").update({ read: true }).eq("id", id);
+    setNotifs(p => p.map(n => n.id === id ? { ...n, read: true } : n));
+  };
+
+  const markAllRead = async () => {
+    const unreadIds = notifs.filter(n => !n.read).map(n => n.id);
+    if (!unreadIds.length) return;
+    await supabase.from("notifications").update({ read: true }).in("id", unreadIds);
+    setNotifs(p => p.map(n => ({ ...n, read: true })));
+    showToast("Tümü okundu olarak işaretlendi!");
+  };
+
+  const NOTIF_TYPES = {
+    ticket_created:   { icon:"tickets",  color:"#60A5FA", label:"Yeni Talep" },
+    ticket_status:    { icon:"dotcircle",color:"#A78BFA", label:"Durum Değişti" },
+    ticket_assigned:  { icon:"users",    color:"#0EA5E9", label:"Danışman Atandı" },
+    efor_added:       { icon:"timesheet",color:"#10B981", label:"Efor Eklendi" },
+    message_sent:     { icon:"mail",     color:"#F59E0B", label:"Mesaj" },
+    project_created:  { icon:"folder",   color:"#A855F7", label:"Yeni Proje" },
+    project_status:   { icon:"activity", color:"#EC4899", label:"Proje Güncellendi" },
+  };
+
+  const filtered = notifs.filter(n => {
+    if (filter === "unread") return !n.read;
+    if (filter === "ticket")  return n.type?.startsWith("ticket");
+    if (filter === "project") return n.type?.startsWith("project");
+    if (filter === "efor")    return n.type === "efor_added";
+    return true;
+  });
+
+  const unread = notifs.filter(n => !n.read).length;
+
+  return (
+    <div>
+      <PageHeader
+        title="Bildirimler"
+        subtitle={`${unread} okunmamış`}
+        action={unread > 0 && <Btn variant="ghost" size="sm" onClick={markAllRead}>Tümünü Okundu İşaretle</Btn>}
+      />
+
+      {/* Filter tabs */}
+      <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
+        {[["all","Tümü"],["unread","Okunmamış"],["ticket","Talepler"],["project","Projeler"],["efor","Efor"]].map(([v,l])=>(
+          <button key={v} onClick={()=>setFilter(v)} style={{
+            padding:"7px 16px", borderRadius:20, border:`1px solid ${filter===v?T.accent:T.border}`,
+            background: filter===v?`${T.accent}20`:"transparent", color: filter===v?T.accent2:T.text3,
+            fontSize:13, fontWeight: filter===v?700:400, cursor:"pointer", transition:"all 0.15s"
+          }}>
+            {l}
+            {v==="unread" && unread>0 && <span style={{ marginLeft:6, background:"#EF4444", color:"#fff", fontSize:10, fontWeight:700, padding:"1px 6px", borderRadius:10 }}>{unread}</span>}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign:"center", padding:60, color:T.text3 }}>Yükleniyor...</div>
+      ) : filtered.length === 0 ? (
+        <div style={{ textAlign:"center", padding:60, color:T.text3 }}>
+          <Icon name="bell" size={48} color={T.text3}/>
+          <p style={{ marginTop:12 }}>Bildirim yok</p>
+        </div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+          {filtered.map(n => {
+            const nt  = NOTIF_TYPES[n.type] || { icon:"bell", color:T.text3, label:n.type };
+            const co  = companies.find(c=>c.id===n.company_id);
+            return (
+              <div key={n.id}
+                onClick={()=>!n.read && markRead(n.id)}
+                style={{
+                  display:"flex", alignItems:"flex-start", gap:14, padding:"14px 16px",
+                  background: n.read ? T.card : `${T.accent}08`,
+                  border:`1px solid ${n.read ? T.border : T.accent+"40"}`,
+                  borderLeft:`3px solid ${n.read ? T.border : nt.color}`,
+                  borderRadius:12, cursor: n.read ? "default" : "pointer",
+                  transition:"all 0.15s"
+                }}
+              >
+                <div style={{ width:38, height:38, borderRadius:10, background:nt.color+"20", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                  <Icon name={nt.icon} size={18} color={nt.color}/>
+                </div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:3, flexWrap:"wrap" }}>
+                    <span style={{ fontSize:11, fontWeight:700, color:nt.color, background:nt.color+"20", padding:"2px 8px", borderRadius:10 }}>{nt.label}</span>
+                    {co && <span style={{ fontSize:11, color:T.teal, background:`${T.teal}15`, padding:"2px 8px", borderRadius:10 }}>{co.name}</span>}
+                    {!n.read && <span style={{ fontSize:10, color:"#EF4444", background:"#EF444420", padding:"2px 6px", borderRadius:10, fontWeight:700 }}>YENİ</span>}
+                  </div>
+                  <p style={{ margin:0, fontSize:14, color: n.read ? T.text2 : T.text, fontWeight: n.read ? 400 : 600, lineHeight:1.5 }}>{n.message}</p>
+                  {n.detail && <p style={{ margin:"3px 0 0", fontSize:12, color:T.text3 }}>{n.detail}</p>}
+                  <div style={{ marginTop:5, fontSize:11, color:T.text3 }}>
+                    {new Date(n.created_at).toLocaleString("tr-TR", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" })}
+                  </div>
+                </div>
+                {!n.read && (
+                  <div style={{ width:8, height:8, borderRadius:"50%", background:"#EF4444", flexShrink:0, marginTop:4 }}/>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Bildirim oluşturma yardımcı fonksiyonu
+const createNotification = async ({ type, message, detail="", company_id=null, recipient_id=null, ref_id=null, ref_type=null }) => {
+  try {
+    await supabase.from("notifications").insert([{
+      type, message, detail, company_id, recipient_id, ref_id, ref_type, read: false
+    }]);
+  } catch(e) { console.warn("Notif error:", e); }
+};
+
+// ─── PROJECTS PAGE ────────────────────────────────────────────────────────────
+const PROJECT_STATUS_CONFIG = {
+  "Planning":    { color:"#F59E0B", bg:"#F59E0B18", label:"Planlama" },
+  "Active":      { color:"#60A5FA", bg:"#60A5FA18", label:"Aktif" },
+  "On Hold":     { color:"#A78BFA", bg:"#A78BFA18", label:"Beklemede" },
+  "Completed":   { color:"#10B981", bg:"#10B98118", label:"Tamamlandı" },
+  "Cancelled":   { color:"#6B7280", bg:"#6B728018", label:"İptal" },
+};
+
+const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
+  const isAdmin    = profile?.role === "admin";
+  const isCons     = profile?.role === "consultant";
+  const isCustomer = profile?.role === "customer";
+
+  const [projects, setProjects]   = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [sel, setSel]             = useState(null);
+  const [showModal, setShowModal] = useState(false);
+  const [saving, setSaving]       = useState(false);
+  const [fStatus, setFStatus]     = useState("all");
+  const [fComp, setFComp]         = useState("all");
+  const [search, setSearch]       = useState("");
+  const [efors, setEfors]         = useState([]);
+  const [showEforForm, setShowEforForm] = useState(false);
+  const [eforForm, setEforForm]   = useState({ date: new Date().toISOString().slice(0,10), hours:"", description:"", company_id:"" });
+  const [savingEfor, setSavingEfor] = useState(false);
+
+  const emptyForm = () => ({
+    name:"", description:"", company_id: isCustomer ? profile.company_id : "",
+    status:"Planning", start_date:"", end_date:"", assignees:[], topics:[]
+  });
+  const [form, setForm] = useState(emptyForm());
+
+  useEffect(() => { load(); }, []);
+  useEffect(() => { if(sel) loadEfors(sel.id); }, [sel?.id]);
+
+  const load = async () => {
+    setLoading(true);
+    let q = supabase.from("projects").select("*").order("created_at", { ascending:false });
+    if (isCustomer) q = q.eq("company_id", profile.company_id);
+    const { data } = await q;
+    setProjects(data || []);
+    setLoading(false);
+  };
+
+  const loadEfors = async (pid) => {
+    const { data } = await supabase.from("project_efors").select("*").eq("project_id", pid).order("date");
+    setEfors(data || []);
+  };
+
+  const saveProject = async () => {
+    if (!form.name) { showToast("Proje adı zorunlu","error"); return; }
+    const cId = isCustomer ? profile.company_id : form.company_id;
+    if (!cId) { showToast("Firma seçin","error"); return; }
+    setSaving(true);
+    const no = "PRJ-" + Date.now().toString().slice(-6);
+    const { error } = await supabase.from("projects").insert([{ ...form, no, company_id:cId }]);
+    setSaving(false);
+    if (error) { showToast(error.message,"error"); return; }
+    showToast("Proje oluşturuldu!");
+    await createNotification({ type:"project_created", message:`Yeni proje oluşturuldu: ${form.name}`, company_id:cId });
+    setShowModal(false); setForm(emptyForm()); load();
+  };
+
+  const changeStatus = async (proj, status) => {
+    await supabase.from("projects").update({ status }).eq("id", proj.id);
+    showToast("Durum: " + PROJECT_STATUS_CONFIG[status]?.label);
+    setSel(p => p ? {...p, status} : p);
+    await createNotification({ type:"project_status", message:`${proj.name} — durum değişti: ${PROJECT_STATUS_CONFIG[status]?.label}`, company_id:proj.company_id });
+    load();
+  };
+
+  const assignConsultants = async (proj, assignees) => {
+    await supabase.from("projects").update({ assignees }).eq("id", proj.id);
+    showToast("Danışmanlar güncellendi!");
+    setSel(p => p ? {...p, assignees} : p);
+    load();
+  };
+
+  const saveEfor = async () => {
+    if (!eforForm.hours || !sel) return;
+    setSavingEfor(true);
+    const { error } = await supabase.from("project_efors").insert([{
+      project_id:  sel.id,
+      consultant:  profile.full_name || profile.email,
+      date:        eforForm.date,
+      hours:       parseFloat(eforForm.hours),
+      description: eforForm.description,
+      company_id:  eforForm.company_id || sel.company_id,
+    }]);
+    setSavingEfor(false);
+    if (error) { showToast(error.message,"error"); return; }
+    showToast("Efor kaydedildi!");
+    await createNotification({ type:"efor_added", message:`${profile.full_name||profile.email} — ${sel.name} projesine ${eforForm.hours}h efor ekledi`, company_id:sel.company_id });
+    setShowEforForm(false);
+    setEforForm({ date: new Date().toISOString().slice(0,10), hours:"", description:"", company_id:"" });
+    loadEfors(sel.id);
+  };
+
+  const getAssignees = (p) => Array.isArray(p.assignees) ? p.assignees : [];
+
+  const filtered = projects.filter(p => {
+    if (fStatus !== "all" && p.status !== fStatus) return false;
+    if (fComp   !== "all" && p.company_id !== fComp) return false;
+    if (search) { const q=search.toLowerCase(); if (!p.name?.toLowerCase().includes(q) && !p.no?.toLowerCase().includes(q)) return false; }
+    return true;
+  });
+
+  const totalHours = efors.reduce((s,e)=>s+parseFloat(e.hours||0),0);
+
+  // ── PROJE DETAY ──
+  if (sel) {
+    const company   = companies.find(c=>c.id===sel.company_id);
+    const assignees = getAssignees(sel);
+    const sc        = PROJECT_STATUS_CONFIG[sel.status] || PROJECT_STATUS_CONFIG.Planning;
+
+    return (
+      <div>
+        <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:20 }}>
+          <button onClick={()=>setSel(null)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:8, padding:"8px 14px", cursor:"pointer", color:T.text2, fontSize:13 }}>← Geri</button>
+          <div style={{ flex:1 }}>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <h2 style={{ margin:0, fontSize:20, fontWeight:800, color:T.text }}>{sel.name}</h2>
+              <Badge color={sc.color} bg={sc.bg}>{sc.label}</Badge>
+              <span style={{ fontSize:12, color:T.text3, fontFamily:"monospace" }}>{sel.no}</span>
+            </div>
+            {company && <div style={{ fontSize:13, color:T.text3, marginTop:3 }}><Icon name="building" size={12} color={T.text3}/> {company.name}</div>}
+          </div>
+        </div>
+
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 340px", gap:20 }}>
+          {/* Sol: Açıklama + Efor */}
+          <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+            {/* Açıklama */}
+            {sel.description && (
+              <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:20 }}>
+                <h4 style={{ margin:"0 0 10px", fontSize:14, fontWeight:700, color:T.text }}>Açıklama</h4>
+                <p style={{ margin:0, fontSize:14, color:T.text2, lineHeight:1.7 }}>{sel.description}</p>
+              </div>
+            )}
+
+            {/* Konular */}
+            {Array.isArray(sel.topics) && sel.topics.length > 0 && (
+              <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                {sel.topics.map(tid => { const tp=TICKET_TOPICS.find(t=>t.id===tid); return tp?<span key={tid} style={{ fontSize:12, fontWeight:700, color:tp.color, background:tp.color+"20", padding:"3px 10px", borderRadius:20 }}>{tp.label}</span>:null; })}
+              </div>
+            )}
+
+            {/* Efor bölümü */}
+            <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:20 }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
+                <h4 style={{ margin:0, fontSize:14, fontWeight:700, color:T.text }}>Efor Takibi <span style={{ fontSize:13, color:T.teal, marginLeft:8 }}>Toplam: {totalHours}h</span></h4>
+                {(isAdmin||isCons) && <Btn variant="ghost" size="sm" onClick={()=>setShowEforForm(p=>!p)}><Icon name="plus" size={13}/> Efor Ekle</Btn>}
+              </div>
+              {showEforForm && (
+                <div style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:14, marginBottom:14 }}>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+                    <div><label style={{ display:"block", fontSize:12, color:T.text2, marginBottom:4 }}>Tarih</label>
+                      <input type="date" value={eforForm.date} onChange={e=>setEforForm(p=>({...p,date:e.target.value}))} style={{ width:"100%", background:T.bg, border:`1px solid ${T.border}`, borderRadius:8, padding:"8px 10px", color:T.text, fontSize:13 }}/>
+                    </div>
+                    <div><label style={{ display:"block", fontSize:12, color:T.text2, marginBottom:4 }}>Saat</label>
+                      <input type="number" step="0.5" min="0.5" max="24" value={eforForm.hours} onChange={e=>setEforForm(p=>({...p,hours:e.target.value}))} placeholder="2.5" style={{ width:"100%", background:T.bg, border:`1px solid ${T.border}`, borderRadius:8, padding:"8px 10px", color:T.text, fontSize:13 }}/>
+                    </div>
+                  </div>
+                  <div style={{ marginBottom:10 }}>
+                    <label style={{ display:"block", fontSize:12, color:T.text2, marginBottom:4 }}>Açıklama</label>
+                    <textarea value={eforForm.description} onChange={e=>setEforForm(p=>({...p,description:e.target.value}))} rows={2} placeholder="Yapılan iş..." style={{ width:"100%", background:T.bg, border:`1px solid ${T.border}`, borderRadius:8, padding:"8px 10px", color:T.text, fontSize:13, resize:"vertical", fontFamily:"inherit" }}/>
+                  </div>
+                  <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
+                    <Btn variant="ghost" size="sm" onClick={()=>setShowEforForm(false)}>İptal</Btn>
+                    <Btn size="sm" onClick={saveEfor} disabled={savingEfor}>{savingEfor?"Kaydediliyor...":"Kaydet"}</Btn>
+                  </div>
+                </div>
+              )}
+              {efors.length === 0
+                ? <div style={{ textAlign:"center", color:T.text3, padding:"20px 0", fontSize:13 }}>Henüz efor girilmemiş</div>
+                : efors.map((e,i)=>(
+                  <div key={e.id||i} style={{ display:"flex", gap:12, paddingBottom:12, position:"relative" }}>
+                    <div style={{ display:"flex", flexDirection:"column", alignItems:"center" }}>
+                      <div style={{ width:32, height:32, borderRadius:"50%", background:`${T.teal}20`, border:`2px solid ${T.teal}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:800, color:T.teal, flexShrink:0 }}>{e.hours}h</div>
+                      {i<efors.length-1 && <div style={{ width:1, flex:1, background:T.border, marginTop:4, minHeight:12 }}/>}
+                    </div>
+                    <div style={{ flex:1, paddingTop:4 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", marginBottom:3 }}>
+                        <span style={{ fontSize:13, fontWeight:600, color:T.text }}>{e.consultant}</span>
+                        <span style={{ fontSize:11, color:T.text3 }}>{new Date(e.date).toLocaleDateString("tr-TR")}</span>
+                      </div>
+                      {e.description && <p style={{ margin:0, fontSize:13, color:T.text2 }}>{e.description}</p>}
+                    </div>
+                  </div>
+                ))
+              }
+            </div>
+          </div>
+
+          {/* Sağ: Bilgiler */}
+          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+            {/* Durum */}
+            {(isAdmin||isCons) && (
+              <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:16 }}>
+                <h4 style={{ margin:"0 0 12px", fontSize:14, fontWeight:700, color:T.text }}>Durum Güncelle</h4>
+                {Object.entries(PROJECT_STATUS_CONFIG).map(([k,v])=>(
+                  <button key={k} onClick={()=>changeStatus(sel,k)} style={{ width:"100%", padding:"8px 12px", marginBottom:5, borderRadius:8, border:`1px solid ${sel.status===k?v.color:T.border}`, background:sel.status===k?v.bg:"transparent", cursor:"pointer", color:sel.status===k?v.color:T.text2, fontSize:13, fontWeight:sel.status===k?700:400, textAlign:"left" }}>
+                    {sel.status===k?"✓ ":""}{v.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Danışman atama */}
+            {isAdmin && (
+              <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:16 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
+                  <Icon name="users" size={16} color={T.purple}/>
+                  <h4 style={{ margin:0, fontSize:14, fontWeight:700, color:T.text }}>Danışman Atama</h4>
+                </div>
+                <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:10 }}>
+                  {assignees.length===0
+                    ? <span style={{ fontSize:12, color:T.warning, background:T.warning+"15", padding:"3px 10px", borderRadius:20 }}>Atanmamış</span>
+                    : assignees.map(a=>(
+                      <span key={a} style={{ display:"inline-flex", alignItems:"center", gap:5, fontSize:12, color:T.accent2, background:`${T.accent}20`, border:`1px solid ${T.accent}40`, padding:"3px 10px", borderRadius:20, fontWeight:600 }}>
+                        {a}
+                        <button onClick={()=>assignConsultants(sel, assignees.filter(x=>x!==a))} style={{ background:"none", border:"none", cursor:"pointer", color:T.accent2, padding:0, lineHeight:1, fontSize:14 }}>×</button>
+                      </span>
+                    ))
+                  }
+                </div>
+                <ConsultantDropdown consultants={consultants} selected={assignees} onChange={list=>assignConsultants(sel,list)}/>
+              </div>
+            )}
+
+            {/* Özet */}
+            <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:16 }}>
+              <h4 style={{ margin:"0 0 12px", fontSize:14, fontWeight:700, color:T.text }}>Özet</h4>
+              {[
+                ["Proje No",    sel.no],
+                ["Firma",       company?.name||"—"],
+                ["Başlangıç",   sel.start_date ? new Date(sel.start_date+"T00:00:00").toLocaleDateString("tr-TR") : "—"],
+                ["Bitiş",       sel.end_date   ? new Date(sel.end_date+"T00:00:00").toLocaleDateString("tr-TR")   : "—"],
+                ["Toplam Efor", totalHours+"h"],
+                ["Danışmanlar", assignees.length ? assignees.join(", ") : "Atanmamış"],
+              ].map(([k,v])=>(
+                <div key={k} style={{ display:"flex", justifyContent:"space-between", padding:"6px 0", borderBottom:`1px solid ${T.border}` }}>
+                  <span style={{ fontSize:13, color:T.text3 }}>{k}</span>
+                  <span style={{ fontSize:13, color:T.text, fontWeight:500, maxWidth:160, textAlign:"right" }}>{v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── PROJE LİSTESİ ──
+  return (
+    <div>
+      <PageHeader
+        title="Projeler"
+        subtitle={`${filtered.length} proje`}
+        action={<Btn onClick={()=>{ setForm(emptyForm()); setShowModal(true); }}><Icon name="plus" size={15}/> Yeni Proje</Btn>}
+      />
+
+      <div style={{ display:"flex", gap:10, marginBottom:20, flexWrap:"wrap", alignItems:"center" }}>
+        <div style={{ position:"relative", flex:1, minWidth:200 }}>
+          <div style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)" }}><Icon name="search" size={15} color={T.text3}/></div>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Proje ara..." style={{ width:"100%", background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 12px 9px 36px", color:T.text, fontSize:14, outline:"none", boxSizing:"border-box" }}/>
+        </div>
+        <select value={fStatus} onChange={e=>setFStatus(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13 }}>
+          <option value="all">Tüm Durumlar</option>
+          {Object.entries(PROJECT_STATUS_CONFIG).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+        </select>
+        {(isAdmin||isCons) && (
+          <select value={fComp} onChange={e=>setFComp(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13 }}>
+            <option value="all">Tüm Firmalar</option>
+            {companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        )}
+      </div>
+
+      {/* İstatistik kartları */}
+      <div style={{ display:"flex", gap:10, marginBottom:20 }}>
+        {Object.entries(PROJECT_STATUS_CONFIG).map(([k,v])=>{
+          const cnt = projects.filter(p=>p.status===k).length;
+          return cnt > 0 ? (
+            <div key={k} style={{ flex:1, background:T.card, border:`1px solid ${v.color}30`, borderRadius:12, padding:"12px 16px" }}>
+              <div style={{ fontSize:20, fontWeight:800, color:v.color }}>{cnt}</div>
+              <div style={{ fontSize:11, color:T.text3, marginTop:2 }}>{v.label}</div>
+            </div>
+          ) : null;
+        })}
+      </div>
+
+      {loading ? <div style={{ textAlign:"center", padding:60, color:T.text3 }}>Yükleniyor...</div>
+      : filtered.length === 0 ? (
+        <div style={{ textAlign:"center", padding:60, color:T.text3 }}>
+          <Icon name="folder" size={48} color={T.text3}/><p style={{ marginTop:12 }}>Proje bulunamadı</p>
+        </div>
+      ) : (
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))", gap:14 }}>
+          {filtered.map(proj=>{
+            const sc = PROJECT_STATUS_CONFIG[proj.status]||PROJECT_STATUS_CONFIG.Planning;
+            const co = companies.find(c=>c.id===proj.company_id);
+            const a  = getAssignees(proj);
+            return (
+              <div key={proj.id} onClick={()=>setSel(proj)}
+                style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:18, cursor:"pointer", transition:"all 0.2s", borderTop:`3px solid ${sc.color}` }}
+                onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow="0 12px 40px rgba(0,0,0,0.3)";}}
+                onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow="";}}
+              >
+                <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:8 }}>
+                  <span style={{ fontSize:11, fontWeight:700, color:T.text3, fontFamily:"monospace" }}>{proj.no}</span>
+                  <Badge color={sc.color} bg={sc.bg}>{sc.label}</Badge>
+                </div>
+                <h4 style={{ margin:"0 0 6px", fontSize:15, fontWeight:700, color:T.text }}>{proj.name}</h4>
+                {Array.isArray(proj.topics) && proj.topics.length > 0 && (
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:4, marginBottom:8 }}>
+                    {proj.topics.slice(0,3).map(tid=>{ const tp=TICKET_TOPICS.find(t=>t.id===tid); return tp?<span key={tid} style={{ fontSize:10, fontWeight:700, color:tp.color, background:tp.color+"20", padding:"2px 7px", borderRadius:10 }}>{tp.label}</span>:null; })}
+                  </div>
+                )}
+                {proj.description && <p style={{ margin:"0 0 10px", fontSize:13, color:T.text3, display:"-webkit-box", WebkitLineClamp:2, WebkitBoxOrient:"vertical", overflow:"hidden" }}>{proj.description}</p>}
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:10 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                    <Icon name="building" size={13} color={T.text3}/>
+                    <span style={{ fontSize:12, color:T.text3 }}>{co?.name||"—"}</span>
+                  </div>
+                  <div style={{ display:"flex" }}>
+                    {a.slice(0,3).map((x,i)=>(
+                      <div key={i} style={{ width:24, height:24, borderRadius:"50%", background:T.grad, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, color:"#fff", marginLeft:i===0?0:-6, border:`2px solid ${T.card}` }}>{x[0]?.toUpperCase()}</div>
+                    ))}
+                    {a.length===0 && <span style={{ fontSize:11, color:"#F59E0B", background:"#F59E0B15", padding:"2px 8px", borderRadius:6 }}>Atanmamış</span>}
+                  </div>
+                </div>
+                {(proj.start_date||proj.end_date) && (
+                  <div style={{ marginTop:8, fontSize:11, color:T.text3 }}>
+                    {proj.start_date && new Date(proj.start_date+"T00:00:00").toLocaleDateString("tr-TR")} {proj.end_date && "→ "+new Date(proj.end_date+"T00:00:00").toLocaleDateString("tr-TR")}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Yeni Proje Modal */}
+      {showModal && (
+        <Modal title="Yeni Proje" onClose={()=>setShowModal(false)} width={560}>
+          <Inp label="Proje Adı *" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} placeholder="Proje adı"/>
+          <Textarea label="Açıklama" value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))} rows={3} placeholder="Proje detayları..."/>
+          {!isCustomer && (
+            <Sel label="Firma *" value={form.company_id} onChange={e=>setForm(p=>({...p,company_id:e.target.value}))}>
+              <option value="">Firma seçin</option>
+              {companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+            </Sel>
+          )}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+            <Sel label="Durum" value={form.status} onChange={e=>setForm(p=>({...p,status:e.target.value}))}>
+              {Object.entries(PROJECT_STATUS_CONFIG).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+            </Sel>
+            <div/>
+            <Inp label="Başlangıç" type="date" value={form.start_date} onChange={e=>setForm(p=>({...p,start_date:e.target.value}))}/>
+            <Inp label="Bitiş"     type="date" value={form.end_date}   onChange={e=>setForm(p=>({...p,end_date:e.target.value}))}/>
+          </div>
+
+          {/* Konular */}
+          <div style={{ marginBottom:16 }}>
+            <label style={{ display:"block", fontSize:13, fontWeight:600, color:T.text2, marginBottom:8 }}>
+              Konu{form.topics?.length>0 && <span style={{ marginLeft:8, fontSize:11, color:T.teal }}>({form.topics.length} seçili)</span>}
+            </label>
+            <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+              {TICKET_TOPICS.map(topic=>{
+                const isSel=form.topics?.includes(topic.id);
+                return <button key={topic.id} onClick={()=>setForm(p=>({...p,topics:isSel?p.topics.filter(x=>x!==topic.id):[...(p.topics||[]),topic.id]}))} style={{ padding:"5px 12px", borderRadius:20, cursor:"pointer", border:`2px solid ${isSel?topic.color:T.border}`, background:isSel?topic.color+"25":T.bg3, color:isSel?topic.color:T.text3, fontSize:12, fontWeight:isSel?700:400, transition:"all 0.15s" }}>{isSel&&"✓ "}{topic.label}</button>;
+              })}
+            </div>
+          </div>
+
+          {isAdmin && (
+            <div style={{ marginBottom:16 }}>
+              <label style={{ display:"block", fontSize:13, fontWeight:600, color:T.text2, marginBottom:6 }}>Danışmanlar</label>
+              <ConsultantDropdown consultants={consultants} selected={form.assignees} onChange={list=>setForm(p=>({...p,assignees:list}))}/>
+            </div>
+          )}
+          <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:8 }}>
+            <Btn variant="ghost" onClick={()=>setShowModal(false)}>İptal</Btn>
+            <Btn onClick={saveProject} disabled={saving}>{saving?"Kaydediliyor...":"Oluştur"}</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [user, setUser]         = useState(null);
@@ -2763,6 +3323,7 @@ export default function App() {
   const [consultants, setConsultants] = useState([]);
   const [allUsers, setAllUsers]   = useState([]);
   const [tickets, setTickets]   = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading]   = useState(true);
 
   useEffect(() => {
@@ -2797,6 +3358,9 @@ export default function App() {
     // All users (for email autocomplete)
     const { data: allProfs } = await supabase.from("profiles").select("id, full_name, email, role, company_id");
     setAllUsers((allProfs || []).filter(u => u.email));
+    // Unread notifications count
+    const { count } = await supabase.from("notifications").select("*", { count:"exact", head:true }).eq("read", false);
+    setUnreadCount(count || 0);
     setLoading(false);
   };
 
@@ -2827,14 +3391,16 @@ export default function App() {
 
   const renderPage = () => {
     switch(page) {
-      case "dashboard":  return <DashboardPage profile={profile} tickets={tickets} companies={companies} consultants={consultants}/>;
-      case "companies":  return <CompaniesPage profile={profile} companies={companies} reloadCompanies={loadAll} allUsers={allUsers} tickets={tickets}/>;
-      case "tickets":    return <TicketsPage profile={profile} companies={companies} consultants={consultants} reload={loadAll} tickets={tickets} allUsers={allUsers}/>;
-      case "timesheet":  return <TimesheetPage profile={profile} companies={companies} consultants={consultants} tickets={tickets}/>;
-      case "invoices":   return <InvoicesPage companies={companies} consultants={consultants} tickets={tickets}/>;
-      case "reports":    return <ReportsPage tickets={tickets} companies={companies} consultants={consultants}/>;
-      case "users":      return <UsersPage companies={companies} onReload={loadAll}/>;
-      default:           return null;
+      case "dashboard":     return <DashboardPage profile={profile} tickets={tickets} companies={companies} consultants={consultants}/>;
+      case "companies":     return <CompaniesPage profile={profile} companies={companies} reloadCompanies={loadAll} allUsers={allUsers} tickets={tickets}/>;
+      case "tickets":       return <TicketsPage profile={profile} companies={companies} consultants={consultants} reload={loadAll} tickets={tickets} allUsers={allUsers}/>;
+      case "projects":      return <ProjectsPage profile={profile} companies={companies} consultants={consultants} allUsers={allUsers}/>;
+      case "timesheet":     return <TimesheetPage profile={profile} companies={companies} consultants={consultants} tickets={tickets}/>;
+      case "invoices":      return <InvoicesPage companies={companies} consultants={consultants} tickets={tickets}/>;
+      case "reports":       return <ReportsPage tickets={tickets} companies={companies} consultants={consultants}/>;
+      case "users":         return <UsersPage companies={companies} onReload={loadAll}/>;
+      case "notifications": return <NotificationsPage profile={profile} companies={companies} consultants={consultants}/>;
+      default:              return null;
     }
   };
 
@@ -2851,7 +3417,7 @@ export default function App() {
         @keyframes slideIn { from { transform:translateY(20px); opacity:0; } to { transform:translateY(0); opacity:1; } }
       `}</style>
       <div style={{ display:"flex", minHeight:"100vh" }}>
-        <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout}/>
+        <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} unreadCount={unreadCount}/>
         <main style={{ flex:1, overflowY:"auto", padding:28, background:T.bg }}>
           {renderPage()}
         </main>
