@@ -2541,10 +2541,14 @@ const UsersPage = ({ companies, onReload }) => {
     onReload?.();
   };
 
-  const updateRole = async (uid, role, company_id) => {
-    const { error } = await supabase.from("profiles").update({ role, company_id: role==="customer"?company_id:null }).eq("id", uid);
-    if (error) { showToast(error.message,"error"); return; }
-    showToast("Rol güncellendi!");
+  const updateRole = async (uid, updates) => {
+    const { error } = await supabase.from("profiles").update({
+      full_name:  updates.full_name,
+      role:       updates.role,
+      company_id: updates.role === "customer" ? updates.company_id : null,
+    }).eq("id", uid);
+    if (error) { showToast(error.message, "error"); return; }
+    showToast("Kullanıcı güncellendi!");
     setShowEdit(null);
     loadUsers();
     onReload?.();
@@ -2674,7 +2678,7 @@ const UsersPage = ({ companies, onReload }) => {
 
       {/* Edit role modal */}
       {showEdit && (
-        <Modal title={`Rol Düzenle — ${showEdit.full_name||showEdit.email}`} onClose={()=>setShowEdit(null)}>
+        <Modal title={`Kullanıcı Düzenle — ${showEdit.full_name||showEdit.email}`} onClose={()=>setShowEdit(null)}>
           <EditRoleForm user={showEdit} companies={companies} ROLE_CONFIG={ROLE_CONFIG} onSave={updateRole} onClose={()=>setShowEdit(null)}/>
         </Modal>
       )}
@@ -2683,41 +2687,68 @@ const UsersPage = ({ companies, onReload }) => {
 };
 
 const EditRoleForm = ({ user, companies, ROLE_CONFIG, onSave, onClose }) => {
-  const [role, setRole]         = useState(user.role || "consultant");
-  const [companyId, setCompanyId] = useState(user.company_id || "");
-  const [saving, setSaving]     = useState(false);
+  const [vals, setVals] = useState({
+    full_name:  user.full_name || "",
+    role:       user.role || "consultant",
+    company_id: user.company_id || "",
+  });
+  const [saving, setSaving] = useState(false);
+
   const submit = async () => {
-    if (role==="customer" && !companyId) { showToast("Müşteri için firma seçin","error"); return; }
+    if (!vals.full_name.trim()) { showToast("Ad Soyad zorunlu", "error"); return; }
+    if (vals.role === "customer" && !vals.company_id) { showToast("Müşteri için firma seçin", "error"); return; }
     setSaving(true);
-    await onSave(user.id, role, companyId);
+    await onSave(user.id, vals);
     setSaving(false);
   };
+
   return (
     <div>
-      <div style={{ marginBottom:16 }}>
-        <label style={{ display:"block", fontSize:13, fontWeight:600, color:T.text2, marginBottom:8 }}>Yeni Rol</label>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
-          {Object.entries(ROLE_CONFIG).map(([r,rc])=>(
-            <button key={r} onClick={()=>setRole(r)} style={{
-              padding:"12px 8px", border:`2px solid ${role===r?rc.color:T.border}`,
-              borderRadius:10, cursor:"pointer", background:role===r?rc.bg:T.bg3,
-              color:role===r?rc.color:T.text3, textAlign:"center", transition:"all 0.15s"
+      {/* Ad Soyad */}
+      <Inp
+        label="Ad Soyad"
+        value={vals.full_name}
+        onChange={e => setVals(p => ({ ...p, full_name: e.target.value }))}
+        placeholder="Ad Soyad"
+      />
+
+      {/* E-posta — sadece göster, değiştirilemez */}
+      <div style={{ marginBottom: 14 }}>
+        <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: T.text2, marginBottom: 6 }}>E-posta</label>
+        <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 14px", color: T.text3, fontSize: 13 }}>
+          {user.email}
+          <span style={{ marginLeft: 8, fontSize: 11, color: T.text3 }}>(değiştirilemez)</span>
+        </div>
+      </div>
+
+      {/* Rol seçimi */}
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: T.text2, marginBottom: 8 }}>Rol</label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+          {Object.entries(ROLE_CONFIG).map(([r, rc]) => (
+            <button key={r} onClick={() => setVals(p => ({ ...p, role: r }))} style={{
+              padding: "12px 8px", border: `2px solid ${vals.role === r ? rc.color : T.border}`,
+              borderRadius: 10, cursor: "pointer", background: vals.role === r ? rc.bg : T.bg3,
+              color: vals.role === r ? rc.color : T.text3, textAlign: "center", transition: "all 0.15s"
             }}>
-              <div style={{ marginBottom:4 }}><Icon name={rc.icon} size={20} color={role===r?rc.color:T.text3}/></div>
-              <div style={{ fontSize:13, fontWeight:700 }}>{rc.label}</div>
+              <div style={{ marginBottom: 4 }}><Icon name={rc.icon} size={20} color={vals.role === r ? rc.color : T.text3} /></div>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{rc.label}</div>
             </button>
           ))}
         </div>
       </div>
-      {role === "customer" && (
-        <Sel label="Firma *" value={companyId} onChange={e=>setCompanyId(e.target.value)}>
+
+      {/* Firma — sadece müşteri için */}
+      {vals.role === "customer" && (
+        <Sel label="Firma *" value={vals.company_id} onChange={e => setVals(p => ({ ...p, company_id: e.target.value }))}>
           <option value="">Firma seçin</option>
-          {companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+          {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
         </Sel>
       )}
-      <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:8 }}>
+
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}>
         <Btn variant="ghost" onClick={onClose}>İptal</Btn>
-        <Btn onClick={submit} disabled={saving}>{saving?"Kaydediliyor...":"Kaydet"}</Btn>
+        <Btn onClick={submit} disabled={saving}>{saving ? "Kaydediliyor..." : "Kaydet"}</Btn>
       </div>
     </div>
   );
