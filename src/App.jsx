@@ -40,28 +40,76 @@ const TICKET_TOPICS = [
 ];
 
 // ─── THEME ────────────────────────────────────────────────────────────────────
-const T = {
-  bg:        "#0F1117",
-  bg2:       "#161B27",
-  bg3:       "#1C2333",
-  card:      "#1A2035",
-  cardHover: "#1F2845",
-  border:    "#2A3550",
-  border2:   "#344060",
-  accent:    "#6366F1",
-  accent2:   "#818CF8",
-  teal:      "#0EA5E9",
-  teal2:     "#38BDF8",
-  purple:    "#A855F7",
-  text:      "#E2E8F0",
-  text2:     "#94A3B8",
-  text3:     "#64748B",
-  success:   "#10B981",
-  warning:   "#F59E0B",
-  error:     "#EF4444",
-  grad:      "linear-gradient(135deg,#6366F1,#0EA5E9)",
-  grad2:     "linear-gradient(135deg,#A855F7,#6366F1)",
+const THEMES = {
+  dark: {
+    bg:        "#0F1117",
+    bg2:       "#161B27",
+    bg3:       "#1C2333",
+    card:      "#1A2035",
+    cardHover: "#1F2845",
+    border:    "#2A3550",
+    border2:   "#344060",
+    accent:    "#6366F1",
+    accent2:   "#818CF8",
+    teal:      "#0EA5E9",
+    teal2:     "#38BDF8",
+    purple:    "#A855F7",
+    text:      "#E2E8F0",
+    text2:     "#94A3B8",
+    text3:     "#64748B",
+    success:   "#10B981",
+    warning:   "#F59E0B",
+    error:     "#EF4444",
+    grad:      "linear-gradient(135deg,#6366F1,#0EA5E9)",
+    grad2:     "linear-gradient(135deg,#A855F7,#6366F1)",
+  },
+  light: {
+    bg:        "#F0F4FB",
+    bg2:       "#FFFFFF",
+    bg3:       "#EEF2FA",
+    card:      "#FFFFFF",
+    cardHover: "#F5F8FF",
+    border:    "#DDE3F0",
+    border2:   "#C8D2E8",
+    accent:    "#4F52D9",
+    accent2:   "#4F52D9",
+    teal:      "#0284C7",
+    teal2:     "#0EA5E9",
+    purple:    "#9333EA",
+    text:      "#1E2A45",
+    text2:     "#475569",
+    text3:     "#94A3B8",
+    success:   "#059669",
+    warning:   "#D97706",
+    error:     "#DC2626",
+    grad:      "linear-gradient(135deg,#4F52D9,#0284C7)",
+    grad2:     "linear-gradient(135deg,#9333EA,#4F52D9)",
+  },
 };
+
+// Global reactive theme — başlangıçta localStorage'dan oku
+let _themeMode = (typeof localStorage !== "undefined" && localStorage.getItem("cf_theme")) || "dark";
+let _themeListeners = [];
+const getTheme = () => THEMES[_themeMode];
+const setThemeMode = (mode) => {
+  _themeMode = mode;
+  if (typeof localStorage !== "undefined") localStorage.setItem("cf_theme", mode);
+  _themeListeners.forEach(fn => fn(mode));
+};
+const useTheme = () => {
+  const [mode, setMode] = React.useState(_themeMode);
+  React.useEffect(() => {
+    const fn = (m) => setMode(m);
+    _themeListeners.push(fn);
+    return () => { _themeListeners = _themeListeners.filter(f => f !== fn); };
+  }, []);
+  return { mode, T: THEMES[mode], setThemeMode };
+};
+// T artık global referans — bileşenler useTheme() hook'u kullanmadan da T'ye erişebilir
+// Ama reaktif güncellemek için hook kullanmalı. Global T sadece başlangıç için:
+let T = THEMES[_themeMode];
+// Tema değişince global T'yi de güncelle (tüm static referanslar için)
+_themeListeners.push((mode) => { T = THEMES[mode]; });
 
 const ADMIN_EMAIL = "cevdetayk53@gmail.com";
 const ADMIN_NAME  = "Cevdet Ayk";
@@ -229,6 +277,7 @@ const Badge = ({ children, color, bg }) => (
 
 // ─── LOGIN ───────────────────────────────────────────────────────────────────
 const LoginPage = ({ onLogin }) => {
+  const { T } = useTheme();
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [loading, setLoading] = useState(false);
@@ -267,6 +316,7 @@ const LoginPage = ({ onLogin }) => {
 
 // ─── SIDEBAR ─────────────────────────────────────────────────────────────────
 const Sidebar = ({ page, setPage, profile, onLogout, unreadCount = 0 }) => {
+  const { mode, T, setThemeMode } = useTheme();
   const isAdmin = profile?.role === "admin";
   const isCons  = profile?.role === "consultant";
   const nav = [
@@ -307,6 +357,32 @@ const Sidebar = ({ page, setPage, profile, onLogout, unreadCount = 0 }) => {
         ))}
       </nav>
       <div style={{ padding:"12px 8px", borderTop:`1px solid ${T.border}` }}>
+        {/* Tema seçici */}
+        <div style={{ background:T.bg3, borderRadius:10, padding:"10px 12px", marginBottom:8, border:`1px solid ${T.border}` }}>
+          <div style={{ fontSize:11, color:T.text3, fontWeight:600, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.05em" }}>Tema</div>
+          <div style={{ display:"flex", gap:6 }}>
+            {[
+              { val:"dark",  label:"Koyu", icon:"🌙" },
+              { val:"light", label:"Açık", icon:"☀️" },
+            ].map(opt => {
+              const active = mode === opt.val;
+              return (
+                <label key={opt.val} style={{ flex:1, cursor:"pointer" }}>
+                  <input type="radio" name="cf_theme" value={opt.val} checked={active} onChange={()=>setThemeMode(opt.val)} style={{ display:"none" }}/>
+                  <div style={{
+                    display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+                    padding:"7px 4px", borderRadius:8, border:`1.5px solid ${active ? T.accent : T.border}`,
+                    background: active ? `${T.accent}18` : "transparent",
+                    transition:"all 0.15s",
+                  }}>
+                    <span style={{ fontSize:14 }}>{opt.icon}</span>
+                    <span style={{ fontSize:10, fontWeight:active?700:400, color:active?T.accent2:T.text3 }}>{opt.label}</span>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+        </div>
         <div style={{ padding:"10px 12px", borderRadius:10, background:T.bg3, marginBottom:8 }}>
           <div style={{ fontSize:13, fontWeight:600, color:T.text, marginBottom:2 }}>{profile?.full_name || profile?.email?.split("@")[0]}</div>
           <div style={{ fontSize:11, color:T.text3 }}>{profile?.role === "admin" ? "Yönetici" : profile?.role === "consultant" ? "Danışman" : "Müşteri"}</div>
@@ -3452,6 +3528,7 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
 
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 export default function App() {
+  const { T: themeT } = useTheme(); // tema değişince App yeniden render olur
   const [user, setUser]         = useState(null);
   const [profile, setProfile]   = useState(null);
   const [page, setPage]         = useState("dashboard");
@@ -3525,9 +3602,9 @@ export default function App() {
   };
 
   if (loading) return (
-    <div style={{ minHeight:"100vh", background:T.bg, display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:16, fontFamily:"'Inter',system-ui,sans-serif" }}>
+    <div style={{ minHeight:"100vh", background:themeT.bg, display:"flex", alignItems:"center", justifyContent:"center", flexDirection:"column", gap:16, fontFamily:"'Inter',system-ui,sans-serif" }}>
       <img src={LOGO_SRC} alt="CF" style={{ width:72, height:72, objectFit:"contain", filter:"drop-shadow(0 4px 20px rgba(99,102,241,0.4))" }}/>
-      <div style={{ color:T.text3, fontSize:14 }}>Yükleniyor...</div>
+      <div style={{ color:themeT.text3, fontSize:14 }}>Yükleniyor...</div>
     </div>
   );
 
@@ -3558,17 +3635,17 @@ export default function App() {
     <>
       <style>{`
         * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family:'Inter',system-ui,sans-serif; background:${T.bg}; color:${T.text}; }
+        body { font-family:'Inter',system-ui,sans-serif; background:${themeT.bg}; color:${themeT.text}; }
         ::-webkit-scrollbar { width:6px; height:6px; }
-        ::-webkit-scrollbar-track { background:${T.bg2}; }
-        ::-webkit-scrollbar-thumb { background:${T.border2}; border-radius:3px; }
-        input[type=date]::-webkit-calendar-picker-indicator { filter:invert(0.5); }
-        select option { background:${T.bg2}; }
+        ::-webkit-scrollbar-track { background:${themeT.bg2}; }
+        ::-webkit-scrollbar-thumb { background:${themeT.border2}; border-radius:3px; }
+        input[type=date]::-webkit-calendar-picker-indicator { filter:${themeT.bg === "#F0F4FB" ? "none" : "invert(0.5)"}; }
+        select option { background:${themeT.bg2}; color:${themeT.text}; }
         @keyframes slideIn { from { transform:translateY(20px); opacity:0; } to { transform:translateY(0); opacity:1; } }
       `}</style>
       <div style={{ display:"flex", minHeight:"100vh" }}>
         <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} unreadCount={unreadCount}/>
-        <main style={{ flex:1, overflowY:"auto", padding:28, background:T.bg }}>
+        <main style={{ flex:1, overflowY:"auto", padding:28, background:themeT.bg }}>
           {renderPage()}
         </main>
       </div>
