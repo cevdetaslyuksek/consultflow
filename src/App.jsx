@@ -833,28 +833,24 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
                   <Icon name="users" size={16} color={T.purple}/>
                   <h4 style={{ margin:0, fontSize:14, fontWeight:700, color:T.text }}>Danışman Atama</h4>
                 </div>
-                <p style={{ fontSize:12, color:T.text3, margin:"0 0 10px" }}>Birden fazla danışman seçebilirsiniz</p>
-                {consultants.map(c => {
-                  const isAss = assignees.includes(c.name);
-                  return (
-                    <div key={c.id} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 10px", borderRadius:8, marginBottom:4, background: isAss ? `${T.accent}15` : T.bg3, border:`1px solid ${isAss ? T.accent+"40" : T.border}`, cursor:"pointer", transition:"all 0.15s" }}
-                      onClick={() => {
-                        const newList = isAss ? assignees.filter(a=>a!==c.name) : [...assignees, c.name];
-                        assignConsultants(sel, newList);
-                      }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                        <div style={{ width:28, height:28, borderRadius:"50%", background:isAss?T.grad:`${T.accent}20`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, color:isAss?"#fff":T.text3 }}>
-                          {c.name[0]?.toUpperCase()}
-                        </div>
-                        <div>
-                          <div style={{ fontSize:13, fontWeight:600, color:T.text }}>{c.name}</div>
-                          <div style={{ fontSize:11, color:T.text3 }}>{c.email}</div>
-                        </div>
-                      </div>
-                      {isAss && <Icon name="check" size={14} color={T.accent2}/>}
-                    </div>
-                  );
-                })}
+                {/* Assigned badges */}
+                <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:10 }}>
+                  {assignees.length === 0 ? (
+                    <span style={{ fontSize:12, color:T.warning, background:T.warning+"15", padding:"3px 10px", borderRadius:20 }}>Atanmamış</span>
+                  ) : assignees.map(a=>(
+                    <span key={a} style={{ display:"inline-flex", alignItems:"center", gap:5, fontSize:12, color:T.accent2, background:`${T.accent}20`, border:`1px solid ${T.accent}40`, padding:"3px 10px", borderRadius:20, fontWeight:600 }}>
+                      <span style={{ width:18, height:18, borderRadius:"50%", background:T.grad, display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:10, color:"#fff", fontWeight:700 }}>{a[0]?.toUpperCase()}</span>
+                      {a}
+                      <button onClick={()=>assignConsultants(sel, assignees.filter(x=>x!==a))} style={{ background:"none", border:"none", cursor:"pointer", color:T.accent2, padding:0, lineHeight:1, fontSize:14 }}>×</button>
+                    </span>
+                  ))}
+                </div>
+                {/* Dropdown listbox */}
+                <ConsultantDropdown
+                  consultants={consultants}
+                  selected={assignees}
+                  onChange={list=>assignConsultants(sel,list)}
+                />
               </div>
             )}
 
@@ -987,18 +983,19 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
           </Sel>
           {isAdmin && (
             <div style={{ marginBottom:16 }}>
-              <label style={{ display:"block", fontSize:13, fontWeight:600, color:T.text2, marginBottom:6 }}>Danışmanlar (çoklu seçim)</label>
-              <div style={{ display:"flex", flexDirection:"column", gap:6, background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:10 }}>
-                {consultants.map(c => {
-                  const sel2 = form.assignees.includes(c.name);
-                  return (
-                    <label key={c.id} style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", padding:"4px 6px", borderRadius:6, background:sel2?`${T.accent}15`:"transparent" }}>
-                      <input type="checkbox" checked={sel2} onChange={()=>setForm(p=>({ ...p, assignees: sel2 ? p.assignees.filter(a=>a!==c.name) : [...p.assignees,c.name] }))} style={{ accentColor:T.accent }}/>
-                      <span style={{ fontSize:13, color:T.text }}>{c.name}</span>
-                    </label>
-                  );
-                })}
-              </div>
+              <label style={{ display:"block", fontSize:13, fontWeight:600, color:T.text2, marginBottom:6 }}>Danışmanlar</label>
+              <ConsultantDropdown
+                consultants={consultants}
+                selected={form.assignees}
+                onChange={list=>setForm(p=>({...p,assignees:list}))}
+              />
+              {form.assignees.length > 0 && (
+                <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginTop:8 }}>
+                  {form.assignees.map(a=>(
+                    <span key={a} style={{ fontSize:12, color:T.accent2, background:`${T.accent}20`, border:`1px solid ${T.accent}40`, padding:"2px 10px", borderRadius:20, fontWeight:600 }}>{a}</span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
           <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:8 }}>
@@ -1096,6 +1093,103 @@ const CompaniesPage = ({ profile, companies, reloadCompanies }) => {
             <Btn onClick={save} disabled={saving}>{saving?"Kaydediliyor...":"Ekle"}</Btn>
           </div>
         </Modal>
+      )}
+    </div>
+  );
+};
+
+// ─── CONSULTANT DROPDOWN LISTBOX ─────────────────────────────────────────────
+const ConsultantDropdown = ({ consultants, selected, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const toggle = (name) => {
+    const next = selected.includes(name) ? selected.filter(x=>x!==name) : [...selected, name];
+    onChange(next);
+  };
+
+  return (
+    <div ref={ref} style={{ position:"relative" }}>
+      <button
+        onClick={()=>setOpen(p=>!p)}
+        style={{
+          width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between",
+          padding:"9px 12px", background:T.bg3, border:`1px solid ${open?T.accent:T.border}`,
+          borderRadius:10, cursor:"pointer", color:T.text2, fontSize:13, transition:"all 0.15s"
+        }}
+      >
+        <span style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <Icon name="users" size={15} color={T.text3}/>
+          <span>{selected.length === 0 ? "Danışman Ata..." : `${selected.length} danışman seçildi`}</span>
+        </span>
+        <span style={{ fontSize:10, transform:open?"rotate(180deg)":"", transition:"transform 0.2s" }}>▼</span>
+      </button>
+
+      {open && (
+        <div style={{
+          position:"absolute", top:"calc(100% + 6px)", left:0, right:0, zIndex:500,
+          background:T.bg2, border:`1px solid ${T.accent}`, borderRadius:12,
+          boxShadow:"0 16px 48px rgba(0,0,0,0.5)", overflow:"hidden", maxHeight:280, overflowY:"auto"
+        }}>
+          {/* Select all / Clear */}
+          <div style={{ display:"flex", gap:0, borderBottom:`1px solid ${T.border}` }}>
+            <button onClick={()=>onChange(consultants.map(c=>c.name))} style={{ flex:1, padding:"8px", background:"transparent", border:"none", cursor:"pointer", color:T.accent2, fontSize:12, fontWeight:600, borderRight:`1px solid ${T.border}` }}>
+              Tümünü Seç
+            </button>
+            <button onClick={()=>onChange([])} style={{ flex:1, padding:"8px", background:"transparent", border:"none", cursor:"pointer", color:"#EF4444", fontSize:12, fontWeight:600 }}>
+              Temizle
+            </button>
+          </div>
+          {consultants.length === 0 ? (
+            <div style={{ padding:16, textAlign:"center", color:T.text3, fontSize:13 }}>Danışman bulunamadı</div>
+          ) : (
+            consultants.map(c => {
+              const isSel = selected.includes(c.name);
+              return (
+                <div
+                  key={c.id}
+                  onClick={()=>toggle(c.name)}
+                  style={{
+                    display:"flex", alignItems:"center", gap:10, padding:"10px 14px",
+                    cursor:"pointer", background:isSel?`${T.accent}15`:"transparent",
+                    borderBottom:`1px solid ${T.border}`, transition:"background 0.1s",
+                  }}
+                  onMouseEnter={e=>{ if(!isSel) e.currentTarget.style.background=T.bg3; }}
+                  onMouseLeave={e=>{ if(!isSel) e.currentTarget.style.background="transparent"; }}
+                >
+                  {/* Custom checkbox */}
+                  <div style={{
+                    width:18, height:18, borderRadius:5, border:`2px solid ${isSel?T.accent:T.border2}`,
+                    background:isSel?T.accent:"transparent", display:"flex", alignItems:"center",
+                    justifyContent:"center", flexShrink:0, transition:"all 0.15s"
+                  }}>
+                    {isSel && <span style={{ color:"#fff", fontSize:11, fontWeight:800 }}>✓</span>}
+                  </div>
+                  {/* Avatar */}
+                  <div style={{
+                    width:30, height:30, borderRadius:"50%",
+                    background:isSel?T.grad:`${T.accent}20`,
+                    display:"flex", alignItems:"center", justifyContent:"center",
+                    fontSize:13, fontWeight:700, color:isSel?"#fff":T.text3, flexShrink:0
+                  }}>
+                    {c.name[0]?.toUpperCase()}
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:isSel?700:500, color:isSel?T.text:T.text2 }}>{c.name}</div>
+                    <div style={{ fontSize:11, color:T.text3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.email}</div>
+                  </div>
+                  {isSel && <Icon name="check" size={14} color={T.accent2}/>}
+                </div>
+              );
+            })
+          )}
+        </div>
       )}
     </div>
   );
@@ -1323,13 +1417,144 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
   );
 };
 
-const InvoicesPage = ({ companies, consultants }) => {
-  const [invoices, setInvoices]   = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [periodMode, setPeriodMode] = useState("monthly");
-  const [refDate, setRefDate]     = useState(new Date().toISOString().slice(0,10));
-  const [fComp, setFComp]         = useState("all");
-  const [fPaid, setFPaid]         = useState("all");
+// ─── INVOICE PREVIEW MODAL ───────────────────────────────────────────────────
+const InvoicePreview = ({ invoice, company, onClose, onExport }) => {
+  const items = Array.isArray(invoice.items) ? invoice.items : [];
+  const subtotal = items.reduce((s,i)=>s+(parseFloat(i.quantity||0)*parseFloat(i.unit_price||0)),0);
+  const taxAmt   = subtotal * (parseFloat(invoice.tax_rate||0)/100);
+  const total    = subtotal + taxAmt;
+
+  const printInvoice = () => {
+    const w = window.open("","_blank","width=800,height=700");
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Fatura ${invoice.invoice_no}</title>
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box} body{font-family:Arial,sans-serif;color:#111;background:#fff;padding:40px}
+      .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:40px;padding-bottom:20px;border-bottom:2px solid #6366F1}
+      .logo{font-size:22px;font-weight:900;color:#6366F1} .inv-no{font-size:18px;font-weight:700;color:#111}
+      .meta{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-bottom:32px}
+      .meta-box h4{font-size:12px;text-transform:uppercase;color:#888;margin-bottom:8px;letter-spacing:0.5px}
+      .meta-box p{font-size:14px;color:#111;margin-bottom:3px}
+      table{width:100%;border-collapse:collapse;margin-bottom:24px}
+      th{background:#f4f4f8;padding:10px 12px;font-size:12px;text-align:left;color:#555;font-weight:700;text-transform:uppercase}
+      td{padding:10px 12px;font-size:13px;border-bottom:1px solid #eee}
+      .totals{margin-left:auto;width:280px} .totals tr td{padding:6px 12px}
+      .total-row{font-weight:800;font-size:16px;color:#6366F1;border-top:2px solid #6366F1!important}
+      .badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700}
+      .paid{background:#d1fae5;color:#065f46} .pending{background:#fef3c7;color:#92400e}
+      .footer{margin-top:40px;padding-top:16px;border-top:1px solid #eee;font-size:12px;color:#aaa;text-align:center}
+    </style></head><body>
+    <div class="header">
+      <div><div class="logo">ConsultFlow</div><div style="font-size:13px;color:#888;margin-top:4px">Danışmanlık Yönetim Sistemi</div></div>
+      <div style="text-align:right">
+        <div class="inv-no">FATURA #${invoice.invoice_no}</div>
+        <div style="font-size:13px;color:#888;margin-top:4px">Tarih: ${new Date(invoice.created_at||Date.now()).toLocaleDateString("tr-TR")}</div>
+        <span class="badge ${invoice.paid?"paid":"pending"}">${invoice.paid?"Ödendi":"Bekliyor"}</span>
+      </div>
+    </div>
+    <div class="meta">
+      <div class="meta-box"><h4>Kesilen Firma</h4><p style="font-size:16px;font-weight:700">${company?.name||"—"}</p>${company?.email?`<p>${company.email}</p>`:""}</div>
+      <div class="meta-box"><h4>Fatura Detayları</h4><p>Vergi Oranı: %${invoice.tax_rate||0}</p><p>Vade: ${invoice.due_date?new Date(invoice.due_date).toLocaleDateString("tr-TR"):"—"}</p></div>
+    </div>
+    <table>
+      <thead><tr><th>#</th><th>Açıklama</th><th>Miktar</th><th>Birim Fiyat</th><th>Toplam</th></tr></thead>
+      <tbody>${items.map((it,i)=>`<tr><td>${i+1}</td><td>${it.description||""}</td><td>${it.quantity||0}</td><td>₺${parseFloat(it.unit_price||0).toLocaleString()}</td><td>₺${(parseFloat(it.quantity||0)*parseFloat(it.unit_price||0)).toLocaleString()}</td></tr>`).join("")}
+      </tbody>
+    </table>
+    <table class="totals">
+      <tr><td>Ara Toplam</td><td style="text-align:right">₺${subtotal.toLocaleString()}</td></tr>
+      <tr><td>KDV (%${invoice.tax_rate||0})</td><td style="text-align:right">₺${taxAmt.toLocaleString()}</td></tr>
+      <tr class="total-row"><td>GENEL TOPLAM</td><td style="text-align:right">₺${total.toLocaleString()}</td></tr>
+    </table>
+    ${invoice.notes?`<div style="background:#f9f9f9;border:1px solid #eee;border-radius:8px;padding:14px;font-size:13px;color:#555"><b>Notlar:</b> ${invoice.notes}</div>`:""}
+    <div class="footer">ConsultFlow Danışmanlık Yönetim Sistemi • Bu fatura bilgisayar tarafından oluşturulmuştur.</div>
+    </body></html>`);
+    w.document.close();
+    setTimeout(()=>w.print(),500);
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:2000, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }} onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:16, width:"100%", maxWidth:700, maxHeight:"90vh", overflow:"hidden", display:"flex", flexDirection:"column", boxShadow:"0 24px 80px rgba(0,0,0,0.6)" }}>
+        {/* Header */}
+        <div style={{ padding:"16px 20px", borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div>
+            <h3 style={{ margin:0, fontSize:18, fontWeight:800, color:T.text }}>Fatura #{invoice.invoice_no}</h3>
+            <span style={{ fontSize:12, color:T.text3 }}>{new Date(invoice.created_at||Date.now()).toLocaleDateString("tr-TR")}</span>
+          </div>
+          <div style={{ display:"flex", gap:8 }}>
+            <Btn variant="ghost" size="sm" onClick={printInvoice}><Icon name="download" size={14}/> PDF / Yazdır</Btn>
+            <Btn variant="ghost" size="sm" onClick={()=>{
+              const rows = [{ "Fatura No":invoice.invoice_no, "Firma":company?.name||"—", "Ara Toplam":subtotal, "KDV":taxAmt, "Toplam":total, "Durum":invoice.paid?"Ödendi":"Bekliyor" }, ...items.map(it=>({ "Kalem":it.description, "Miktar":it.quantity, "Birim Fiyat":it.unit_price, "Satır Toplam":parseFloat(it.quantity||0)*parseFloat(it.unit_price||0) }))];
+              exportToCSV(rows, `fatura_${invoice.invoice_no}`);
+            }}><Icon name="download" size={14}/> CSV</Btn>
+            <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, padding:4 }}><Icon name="x" size={20}/></button>
+          </div>
+        </div>
+        {/* Body */}
+        <div style={{ padding:24, overflowY:"auto", flex:1 }}>
+          {/* Meta */}
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:20 }}>
+            <div style={{ background:T.bg3, borderRadius:12, padding:16 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:T.text3, textTransform:"uppercase", marginBottom:8, letterSpacing:"0.5px" }}>Kesilen Firma</div>
+              <div style={{ fontSize:16, fontWeight:800, color:T.text }}>{company?.name||"—"}</div>
+              {company?.email && <div style={{ fontSize:12, color:T.text3, marginTop:3 }}>{company.email}</div>}
+            </div>
+            <div style={{ background:T.bg3, borderRadius:12, padding:16 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:T.text3, textTransform:"uppercase", marginBottom:8, letterSpacing:"0.5px" }}>Fatura Bilgileri</div>
+              <div style={{ fontSize:13, color:T.text2 }}>Vergi: %{invoice.tax_rate||0}</div>
+              <div style={{ fontSize:13, color:T.text2 }}>Vade: {invoice.due_date ? new Date(invoice.due_date).toLocaleDateString("tr-TR") : "—"}</div>
+              <div style={{ marginTop:6 }}><Badge color={invoice.paid?T.success:T.warning} bg={(invoice.paid?T.success:T.warning)+"20"}>{invoice.paid?"Ödendi":"Bekliyor"}</Badge></div>
+            </div>
+          </div>
+          {/* Items table */}
+          <div style={{ background:T.bg3, borderRadius:12, overflow:"hidden", marginBottom:16 }}>
+            <div style={{ display:"grid", gridTemplateColumns:"2fr 80px 120px 120px", gap:8, padding:"10px 14px", fontSize:11, fontWeight:700, color:T.text3, textTransform:"uppercase", borderBottom:`1px solid ${T.border}` }}>
+              <span>Açıklama</span><span>Miktar</span><span>Birim Fiyat</span><span style={{textAlign:"right"}}>Toplam</span>
+            </div>
+            {items.map((it,i)=>(
+              <div key={i} style={{ display:"grid", gridTemplateColumns:"2fr 80px 120px 120px", gap:8, padding:"10px 14px", borderBottom:`1px solid ${T.border}`, alignItems:"center" }}>
+                <span style={{ fontSize:13, color:T.text }}>{it.description}</span>
+                <span style={{ fontSize:13, color:T.text2 }}>{it.quantity}</span>
+                <span style={{ fontSize:13, color:T.text2 }}>₺{parseFloat(it.unit_price||0).toLocaleString()}</span>
+                <span style={{ fontSize:13, fontWeight:700, color:T.accent2, textAlign:"right" }}>₺{(parseFloat(it.quantity||0)*parseFloat(it.unit_price||0)).toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+          {/* Totals */}
+          <div style={{ display:"flex", justifyContent:"flex-end" }}>
+            <div style={{ background:T.bg3, borderRadius:12, padding:16, minWidth:260 }}>
+              {[["Ara Toplam",`₺${subtotal.toLocaleString()}`,T.text2],[`KDV (%${invoice.tax_rate||0})`,`₺${taxAmt.toLocaleString()}`,T.text2],["GENEL TOPLAM",`₺${total.toLocaleString()}`,T.accent2]].map(([k,v,c])=>(
+                <div key={k} style={{ display:"flex", justifyContent:"space-between", padding:"5px 0", borderBottom: k==="GENEL TOPLAM"?"none":`1px solid ${T.border}` }}>
+                  <span style={{ fontSize:k==="GENEL TOPLAM"?15:13, fontWeight:k==="GENEL TOPLAM"?800:400, color:c }}>{k}</span>
+                  <span style={{ fontSize:k==="GENEL TOPLAM"?18:13, fontWeight:700, color:c }}>{v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {invoice.notes && <div style={{ marginTop:16, background:`${T.teal}10`, border:`1px solid ${T.teal}30`, borderRadius:10, padding:"12px 14px", fontSize:13, color:T.text2 }}><b>Not:</b> {invoice.notes}</div>}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const InvoicesPage = ({ companies, consultants, tickets }) => {
+  const [invoices, setInvoices]       = useState([]);
+  const [loading, setLoading]         = useState(true);
+  const [periodMode, setPeriodMode]   = useState("monthly");
+  const [refDate, setRefDate]         = useState(new Date().toISOString().slice(0,10));
+  const [fComp, setFComp]             = useState("all");
+  const [fPaid, setFPaid]             = useState("all");
+  const [showCreate, setShowCreate]   = useState(false);
+  const [viewInvoice, setViewInvoice] = useState(null);
+  const [saving, setSaving]           = useState(false);
+
+  const emptyForm = () => ({
+    invoice_no: "FAT-" + Date.now().toString().slice(-6),
+    company_id: "", due_date: "", tax_rate: "18", paid: false, notes: "",
+    items: [{ description:"", quantity:"1", unit_price:"" }]
+  });
+  const [form, setForm] = useState(emptyForm);
 
   const range = getDateRange(periodMode, refDate);
 
@@ -1358,6 +1583,45 @@ const InvoicesPage = ({ companies, consultants }) => {
     setRefDate(d.toISOString().slice(0,10));
   };
 
+  const addItem  = () => setForm(p=>({...p, items:[...p.items,{description:"",quantity:"1",unit_price:""}]}));
+  const removeItem = (i) => setForm(p=>({...p, items:p.items.filter((_,idx)=>idx!==i)}));
+  const updateItem = (i, field, val) => setForm(p=>({ ...p, items:p.items.map((it,idx)=>idx===i?{...it,[field]:val}:it) }));
+
+  const calcTotal = (f) => {
+    const sub = f.items.reduce((s,it)=>s+(parseFloat(it.quantity||0)*parseFloat(it.unit_price||0)),0);
+    const tax  = sub*(parseFloat(f.tax_rate||0)/100);
+    return sub+tax;
+  };
+
+  const createInvoice = async () => {
+    if (!form.company_id) { showToast("Firma seçin","error"); return; }
+    if (!form.items.some(it=>it.description&&it.unit_price)) { showToast("En az bir kalem ekleyin","error"); return; }
+    setSaving(true);
+    const total = calcTotal(form);
+    const { error } = await supabase.from("invoices").insert([{
+      invoice_no: form.invoice_no,
+      company_id: form.company_id,
+      due_date:   form.due_date || null,
+      tax_rate:   parseFloat(form.tax_rate||0),
+      total,
+      paid:       false,
+      notes:      form.notes,
+      items:      form.items.filter(it=>it.description&&it.unit_price),
+    }]);
+    setSaving(false);
+    if (error) { showToast(error.message,"error"); return; }
+    showToast("Fatura oluşturuldu!");
+    setShowCreate(false);
+    setForm(emptyForm());
+    load();
+  };
+
+  const togglePaid = async (inv) => {
+    await supabase.from("invoices").update({ paid:!inv.paid }).eq("id",inv.id);
+    showToast(inv.paid ? "Ödenmedi işaretlendi" : "Ödendi işaretlendi!");
+    load();
+  };
+
   const totalAmount = invoices.reduce((s,i)=>s+(parseFloat(i.total)||0),0);
   const paidAmount  = invoices.filter(i=>i.paid).reduce((s,i)=>s+(parseFloat(i.total)||0),0);
 
@@ -1371,6 +1635,7 @@ const InvoicesPage = ({ companies, consultants }) => {
       "Firma":      companies.find(c=>c.id===inv.company_id)?.name||"—",
       "Tutar (₺)":  inv.total||0,
       "Tarih":      new Date(inv.created_at).toLocaleDateString("tr-TR"),
+      "Vade":       inv.due_date ? new Date(inv.due_date).toLocaleDateString("tr-TR") : "—",
       "Durum":      inv.paid ? "Ödendi" : "Bekliyor",
     }));
     const label = periodMode==="daily" ? range.from : periodMode==="weekly" ? `${range.from}_${range.to}` : refDate.slice(0,7);
@@ -1382,7 +1647,12 @@ const InvoicesPage = ({ companies, consultants }) => {
       <PageHeader
         title="Faturalar"
         subtitle={`${invoices.length} fatura — Toplam ₺${totalAmount.toLocaleString()}`}
-        action={<Btn variant="success" size="sm" onClick={doExport}><Icon name="download" size={14}/> Excel'e Aktar</Btn>}
+        action={
+          <div style={{ display:"flex", gap:8 }}>
+            <Btn variant="success" size="sm" onClick={doExport}><Icon name="download" size={14}/> Excel'e Aktar</Btn>
+            <Btn onClick={()=>{ setForm(emptyForm()); setShowCreate(true); }}><Icon name="plus" size={15}/> Fatura Kes</Btn>
+          </div>
+        }
       />
 
       {/* Period selector */}
@@ -1426,25 +1696,96 @@ const InvoicesPage = ({ companies, consultants }) => {
         ))}
       </div>
 
+      {/* Table */}
       <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, overflow:"hidden" }}>
-        <div style={{ padding:"12px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"1fr 1fr 130px 130px 110px", gap:12, fontSize:12, fontWeight:700, color:T.text3 }}>
-          <span>Fatura No</span><span>Firma</span><span>Tutar</span><span>Tarih</span><span>Durum</span>
+        <div style={{ padding:"12px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"140px 1fr 130px 120px 110px 120px", gap:12, fontSize:12, fontWeight:700, color:T.text3 }}>
+          <span>Fatura No</span><span>Firma</span><span>Tutar</span><span>Tarih</span><span>Durum</span><span>İşlem</span>
         </div>
         {loading ? <div style={{ textAlign:"center", padding:40, color:T.text3 }}>Yükleniyor...</div>
         : invoices.length===0 ? <div style={{ textAlign:"center", padding:40, color:T.text3 }}>Bu dönemde fatura yok</div>
         : invoices.map(inv=>{
           const co = companies.find(c=>c.id===inv.company_id);
           return (
-            <div key={inv.id} style={{ padding:"12px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"1fr 1fr 130px 130px 110px", gap:12, alignItems:"center" }}>
-              <span style={{ fontSize:13, fontWeight:600, color:T.text }}>{inv.invoice_no||inv.id?.slice(0,8)}</span>
+            <div key={inv.id} style={{ padding:"11px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"140px 1fr 130px 120px 110px 120px", gap:12, alignItems:"center" }}>
+              <span style={{ fontSize:13, fontWeight:700, color:T.accent2, fontFamily:"monospace" }}>{inv.invoice_no||inv.id?.slice(0,8)}</span>
               <span style={{ fontSize:13, color:T.text2 }}>{co?.name||"—"}</span>
               <span style={{ fontSize:14, fontWeight:700, color:T.success }}>₺{(inv.total||0).toLocaleString()}</span>
               <span style={{ fontSize:13, color:T.text3 }}>{new Date(inv.created_at).toLocaleDateString("tr-TR")}</span>
               <Badge color={inv.paid?T.success:T.warning} bg={(inv.paid?T.success:T.warning)+"20"}>{inv.paid?"Ödendi":"Bekliyor"}</Badge>
+              <div style={{ display:"flex", gap:6 }}>
+                <button onClick={()=>setViewInvoice(inv)} title="Görüntüle" style={{ background:`${T.accent}20`, border:"none", borderRadius:6, padding:"5px 8px", cursor:"pointer", color:T.accent2, fontSize:12, fontWeight:600 }}>
+                  Görüntüle
+                </button>
+                <button onClick={()=>togglePaid(inv)} title={inv.paid?"Ödenmedi":"Ödendi"} style={{ background:inv.paid?`${T.warning}20`:`${T.success}20`, border:"none", borderRadius:6, padding:"5px 8px", cursor:"pointer", color:inv.paid?T.warning:T.success, fontSize:12, fontWeight:600 }}>
+                  {inv.paid?"↺":"✓"}
+                </button>
+              </div>
             </div>
           );
         })}
       </div>
+
+      {/* Create Invoice Modal */}
+      {showCreate && (
+        <Modal title="Yeni Fatura Kes" onClose={()=>setShowCreate(false)} width={680}>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:4 }}>
+            <Inp label="Fatura No" value={form.invoice_no} onChange={e=>setForm(p=>({...p,invoice_no:e.target.value}))}/>
+            <Inp label="Vade Tarihi" type="date" value={form.due_date} onChange={e=>setForm(p=>({...p,due_date:e.target.value}))}/>
+          </div>
+          <Sel label="Firma *" value={form.company_id} onChange={e=>setForm(p=>({...p,company_id:e.target.value}))}>
+            <option value="">Firma seçin</option>
+            {companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+          </Sel>
+          <div style={{ marginBottom:16 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+              <label style={{ fontSize:13, fontWeight:600, color:T.text2 }}>Fatura Kalemleri *</label>
+              <Btn variant="ghost" size="sm" onClick={addItem}><Icon name="plus" size={12}/> Kalem Ekle</Btn>
+            </div>
+            <div style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, overflow:"hidden" }}>
+              <div style={{ display:"grid", gridTemplateColumns:"2fr 70px 120px 32px", gap:8, padding:"8px 12px", fontSize:11, fontWeight:700, color:T.text3, textTransform:"uppercase" }}>
+                <span>Açıklama</span><span>Miktar</span><span>Birim Fiyat (₺)</span><span></span>
+              </div>
+              {form.items.map((it,i)=>(
+                <div key={i} style={{ display:"grid", gridTemplateColumns:"2fr 70px 120px 32px", gap:8, padding:"6px 12px", borderTop:`1px solid ${T.border}`, alignItems:"center" }}>
+                  <input value={it.description} onChange={e=>updateItem(i,"description",e.target.value)} placeholder="Hizmet açıklaması" style={{ background:T.bg, border:`1px solid ${T.border}`, borderRadius:6, padding:"6px 10px", color:T.text, fontSize:13, outline:"none" }}/>
+                  <input type="number" min="1" value={it.quantity} onChange={e=>updateItem(i,"quantity",e.target.value)} style={{ background:T.bg, border:`1px solid ${T.border}`, borderRadius:6, padding:"6px 8px", color:T.text, fontSize:13, outline:"none", textAlign:"center" }}/>
+                  <input type="number" min="0" value={it.unit_price} onChange={e=>updateItem(i,"unit_price",e.target.value)} placeholder="0" style={{ background:T.bg, border:`1px solid ${T.border}`, borderRadius:6, padding:"6px 8px", color:T.text, fontSize:13, outline:"none" }}/>
+                  <button onClick={()=>removeItem(i)} disabled={form.items.length===1} style={{ background:"none", border:"none", cursor:form.items.length===1?"default":"pointer", color:form.items.length===1?T.text3:"#EF4444", padding:4, borderRadius:4 }}>✕</button>
+                </div>
+              ))}
+              <div style={{ padding:"8px 12px", borderTop:`1px solid ${T.border}`, display:"flex", justifyContent:"flex-end", gap:20 }}>
+                <span style={{ fontSize:13, color:T.text3 }}>Ara Toplam: <b style={{ color:T.text }}>₺{form.items.reduce((s,it)=>s+(parseFloat(it.quantity||0)*parseFloat(it.unit_price||0)),0).toLocaleString()}</b></span>
+              </div>
+            </div>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+            <div>
+              <label style={{ display:"block", fontSize:13, fontWeight:600, color:T.text2, marginBottom:6 }}>KDV Oranı (%)</label>
+              <input type="number" min="0" max="100" value={form.tax_rate} onChange={e=>setForm(p=>({...p,tax_rate:e.target.value}))} style={{ width:"100%", background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"10px 14px", color:T.text, fontSize:14, outline:"none" }}/>
+            </div>
+            <div style={{ display:"flex", alignItems:"flex-end", paddingBottom:2 }}>
+              <div style={{ background:`${T.success}15`, border:`1px solid ${T.success}40`, borderRadius:10, padding:"12px 16px", width:"100%", textAlign:"center" }}>
+                <div style={{ fontSize:12, color:T.text3 }}>GENEL TOPLAM</div>
+                <div style={{ fontSize:20, fontWeight:800, color:T.success }}>₺{calcTotal(form).toLocaleString()}</div>
+              </div>
+            </div>
+          </div>
+          <Textarea label="Notlar" value={form.notes} onChange={e=>setForm(p=>({...p,notes:e.target.value}))} rows={2} style={{ marginTop:8 }} placeholder="İsteğe bağlı not..."/>
+          <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:8 }}>
+            <Btn variant="ghost" onClick={()=>setShowCreate(false)}>İptal</Btn>
+            <Btn onClick={createInvoice} disabled={saving}>{saving?"Oluşturuluyor...":"Fatura Oluştur"}</Btn>
+          </div>
+        </Modal>
+      )}
+
+      {/* Preview Modal */}
+      {viewInvoice && (
+        <InvoicePreview
+          invoice={viewInvoice}
+          company={companies.find(c=>c.id===viewInvoice.company_id)}
+          onClose={()=>setViewInvoice(null)}
+        />
+      )}
     </div>
   );
 };
@@ -1920,7 +2261,7 @@ export default function App() {
       case "companies":  return <CompaniesPage profile={profile} companies={companies} reloadCompanies={loadAll}/>;
       case "tickets":    return <TicketsPage profile={profile} companies={companies} consultants={consultants} reload={loadAll} tickets={tickets}/>;
       case "timesheet":  return <TimesheetPage profile={profile} companies={companies} consultants={consultants} tickets={tickets}/>;
-      case "invoices":   return <InvoicesPage companies={companies} consultants={consultants}/>;
+      case "invoices":   return <InvoicesPage companies={companies} consultants={consultants} tickets={tickets}/>;
       case "reports":    return <ReportsPage tickets={tickets} companies={companies} consultants={consultants}/>;
       case "users":      return <UsersPage companies={companies} onReload={loadAll}/>;
       default:           return null;
