@@ -323,7 +323,104 @@ const StatCard = ({ label, value, icon, color, sub }) => (
 );
 
 // ─── EMAIL THREAD COMPONENT ───────────────────────────────────────────────────
-const EmailThread = ({ ticket, profile, companies }) => {
+// ─── EMAIL AUTOCOMPLETE INPUT ─────────────────────────────────────────────────
+const EmailAutoInput = ({ label, value, onChange, placeholder, allUsers }) => {
+  const [query, setQuery]       = useState("");
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSug, setShowSug]   = useState(false);
+  const inputRef = useRef(null);
+  const wrapRef  = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setShowSug(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Son virgülden sonraki kısım aktif query
+  const getActive = (v) => {
+    const parts = v.split(",");
+    return parts[parts.length - 1].trim();
+  };
+
+  const handleChange = (e) => {
+    const val = e.target.value;
+    onChange(val);
+    const active = getActive(val);
+    setQuery(active);
+    if (active.length >= 1) {
+      const filtered = allUsers.filter(u => {
+        const q = active.toLowerCase();
+        return (
+          u.email?.toLowerCase().includes(q) ||
+          u.full_name?.toLowerCase().includes(q)
+        );
+      }).slice(0, 6);
+      setSuggestions(filtered);
+      setShowSug(filtered.length > 0);
+    } else {
+      setShowSug(false);
+    }
+  };
+
+  const selectUser = (u) => {
+    // Var olan listeye bu emaili ekle
+    const parts = value.split(",").map(p => p.trim()).filter(Boolean);
+    parts.pop(); // aktif yarım yazılanı sil
+    parts.push(u.email);
+    onChange(parts.join(", ") + ", ");
+    setShowSug(false);
+    setQuery("");
+    setTimeout(() => inputRef.current?.focus(), 50);
+  };
+
+  const ROLE_COLORS = { admin:"#A855F7", consultant:"#0EA5E9", customer:"#10B981" };
+  const ROLE_LABELS = { admin:"Yönetici", consultant:"Danışman", customer:"Müşteri" };
+
+  return (
+    <div ref={wrapRef} style={{ position:"relative", marginBottom:10 }}>
+      {label && <label style={{ display:"block", fontSize:13, fontWeight:600, color:T.text2, marginBottom:6 }}>{label}</label>}
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={handleChange}
+        onFocus={() => { if (suggestions.length > 0) setShowSug(true); }}
+        placeholder={placeholder}
+        style={{ width:"100%", background:T.bg3, border:`1px solid ${showSug ? T.accent : T.border}`, borderRadius:10, padding:"10px 14px", color:T.text, fontSize:13, outline:"none", fontFamily:"inherit", transition:"border 0.15s" }}
+      />
+      {showSug && (
+        <div style={{
+          position:"absolute", top:"calc(100% + 4px)", left:0, right:0, zIndex:600,
+          background:T.bg2, border:`1px solid ${T.accent}`, borderRadius:12,
+          boxShadow:"0 16px 48px rgba(0,0,0,0.5)", overflow:"hidden"
+        }}>
+          {suggestions.map(u => (
+            <div
+              key={u.id}
+              onClick={() => selectUser(u)}
+              style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", cursor:"pointer", borderBottom:`1px solid ${T.border}`, transition:"background 0.1s" }}
+              onMouseEnter={e => e.currentTarget.style.background = T.bg3}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+            >
+              <div style={{ width:32, height:32, borderRadius:"50%", background:`${T.accent}25`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700, color:T.accent2, flexShrink:0 }}>
+                {(u.full_name || u.email || "?")[0].toUpperCase()}
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:13, fontWeight:600, color:T.text }}>{u.full_name || u.email}</div>
+                <div style={{ fontSize:12, color:T.text3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{u.email}</div>
+              </div>
+              <span style={{ fontSize:11, fontWeight:700, color:ROLE_COLORS[u.role]||T.text3, background:(ROLE_COLORS[u.role]||T.text3)+"20", padding:"2px 8px", borderRadius:10, flexShrink:0 }}>
+                {ROLE_LABELS[u.role]||u.role}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const EmailThread = ({ ticket, profile, companies, allUsers = [] }) => {
   const [emails, setEmails] = useState([]);
   const [loading, setLoading] = useState(true);
   const [composing, setComposing] = useState(false);
@@ -457,8 +554,8 @@ const EmailThread = ({ ticket, profile, companies }) => {
             <h4 style={{ margin:0, color:T.text, fontSize:14 }}>{replyTo ? "Yanıtla" : "Yeni E-posta"}</h4>
             <button onClick={()=>setComposing(false)} style={{ background:"none", border:"none", cursor:"pointer", color:T.text3 }}><Icon name="x" size={16}/></button>
           </div>
-          <Inp label="Kime (virgülle ayırın)" value={form.to} onChange={e=>setForm(p=>({...p,to:e.target.value}))} placeholder="ornek@firma.com, ornek2@firma.com" style={{marginBottom:8}}/>
-          <Inp label="CC" value={form.cc} onChange={e=>setForm(p=>({...p,cc:e.target.value}))} placeholder="cc@firma.com (isteğe bağlı)" style={{marginBottom:8}}/>
+          <EmailAutoInput label="Kime (virgülle ayırın)" value={form.to} onChange={v=>setForm(p=>({...p,to:v}))} placeholder="ornek@firma.com, ornek2@firma.com" allUsers={allUsers}/>
+          <EmailAutoInput label="CC" value={form.cc} onChange={v=>setForm(p=>({...p,cc:v}))} placeholder="cc@firma.com (isteğe bağlı)" allUsers={allUsers}/>
           <Inp label="Konu" value={form.subject} onChange={e=>setForm(p=>({...p,subject:e.target.value}))} style={{marginBottom:8}}/>
           <Textarea label="İçerik" value={form.body} onChange={e=>setForm(p=>({...p,body:e.target.value}))} rows={6} style={{marginBottom:12}}/>
           <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
@@ -482,7 +579,7 @@ const EmailThread = ({ ticket, profile, companies }) => {
 };
 
 // ─── TICKETS PAGE ────────────────────────────────────────────────────────────
-const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, tickets }) => {
+const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, tickets, allUsers = [] }) => {
   const isAdmin    = profile?.role === "admin";
   const isCons     = profile?.role === "consultant";
   const isCustomer = profile?.role === "customer";
@@ -738,7 +835,7 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
                 <Icon name="mail" size={18} color={T.accent2}/>
                 <h3 style={{ margin:0, fontSize:16, fontWeight:700, color:T.text }}>E-posta Yazışmaları</h3>
               </div>
-              <EmailThread ticket={sel} profile={profile} companies={companies}/>
+              <EmailThread ticket={sel} profile={profile} companies={companies} allUsers={allUsers}/>
             </div>
 
             {/* Effort Timeline */}
@@ -1661,7 +1758,6 @@ const InvoicesPage = ({ companies, consultants, tickets }) => {
       due_date:   form.due_date || null,
       tax_rate:   parseFloat(form.tax_rate||0),
       total,
-      paid:       false,
       notes:      form.notes,
       items:      form.items.filter(it=>it.description&&it.unit_price),
     }]).select().single();
@@ -2318,6 +2414,7 @@ export default function App() {
   const [page, setPage]         = useState("dashboard");
   const [companies, setCompanies]   = useState([]);
   const [consultants, setConsultants] = useState([]);
+  const [allUsers, setAllUsers]   = useState([]);
   const [tickets, setTickets]   = useState([]);
   const [loading, setLoading]   = useState(true);
 
@@ -2350,6 +2447,9 @@ export default function App() {
     // Consultants
     const { data: cons } = await supabase.from("profiles").select("id, full_name, email").eq("role", "consultant");
     setConsultants((cons || []).map(c => ({ id: c.id, name: c.full_name || c.email, email: c.email })));
+    // All users (for email autocomplete)
+    const { data: allProfs } = await supabase.from("profiles").select("id, full_name, email, role");
+    setAllUsers((allProfs || []).filter(u => u.email));
     setLoading(false);
   };
 
@@ -2382,7 +2482,7 @@ export default function App() {
     switch(page) {
       case "dashboard":  return <DashboardPage profile={profile} tickets={tickets} companies={companies} consultants={consultants}/>;
       case "companies":  return <CompaniesPage profile={profile} companies={companies} reloadCompanies={loadAll}/>;
-      case "tickets":    return <TicketsPage profile={profile} companies={companies} consultants={consultants} reload={loadAll} tickets={tickets}/>;
+      case "tickets":    return <TicketsPage profile={profile} companies={companies} consultants={consultants} reload={loadAll} tickets={tickets} allUsers={allUsers}/>;
       case "timesheet":  return <TimesheetPage profile={profile} companies={companies} consultants={consultants} tickets={tickets}/>;
       case "invoices":   return <InvoicesPage companies={companies} consultants={consultants} tickets={tickets}/>;
       case "reports":    return <ReportsPage tickets={tickets} companies={companies} consultants={consultants}/>;
