@@ -2573,12 +2573,22 @@ const UsersPage = ({ companies, onReload }) => {
   };
 
   const updateRole = async (uid, updates) => {
-    const { error } = await supabase.from("profiles").update({
+    const payload = {
       full_name:  updates.full_name,
       role:       updates.role,
       company_id: updates.role === "customer" ? updates.company_id : null,
-    }).eq("id", uid);
-    if (error) { showToast(error.message, "error"); return; }
+    };
+    const { data, error } = await supabase.from("profiles").update(payload).eq("id", uid).select();
+    if (error) {
+      console.error("Profile update error:", error);
+      showToast("Hata: " + error.message, "error");
+      return;
+    }
+    if (!data || data.length === 0) {
+      // RLS engeli — upsert ile dene
+      const { error: upsertErr } = await supabase.from("profiles").upsert({ id: uid, ...payload }, { onConflict:"id" });
+      if (upsertErr) { showToast("Güncellenemedi: " + upsertErr.message, "error"); return; }
+    }
     showToast("Kullanıcı güncellendi!");
     setShowEdit(null);
     loadUsers();
