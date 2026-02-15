@@ -891,13 +891,6 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
             <div style={{ display:"flex", gap:6, alignItems:"center" }}>
               <Badge color={pc.color} bg={pc.bg}>{pc.label}</Badge>
               <Badge color={sc.color} bg={sc.bg}>{sc.label}</Badge>
-              <button
-                onClick={e=>{e.stopPropagation(); if(profile?.role==="admin") setConfirmDelete({ticket:t}); }}
-                title="Sil"
-                style={{ background:"#EF444422", border:"1px solid #EF444455", borderRadius:7, padding:"3px 8px", cursor:"pointer", display: profile?.role==="admin" ? "flex" : "none", alignItems:"center", gap:4, marginLeft:2, color:"#EF4444", fontSize:11, fontWeight:700 }}
-              >
-                <Icon name="trash" size={12} color="#EF4444"/> Sil
-              </button>
             </div>
           </div>
           <h4 style={{ margin:"0 0 8px", fontSize:14, fontWeight:700, color:T.text, lineHeight:1.4 }}>{t.title}</h4>
@@ -930,16 +923,6 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
           </div>
           <div style={{ marginTop:8, fontSize:11, color:T.text3 }}>{new Date(t.created_at).toLocaleDateString("tr-TR")}</div>
         </div>
-        {profile?.role === "admin" && (
-          <div onClick={e=>e.stopPropagation()} style={{ padding:"0 16px 12px" }}>
-            <button
-              onClick={e=>{e.stopPropagation(); setConfirmDelete({ticket:t});}}
-              style={{ width:"100%", padding:"7px", borderRadius:8, border:"1px solid #EF444440", background:"#EF444415", color:"#EF4444", fontSize:12, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}
-            >
-              <Icon name="trash" size={13} color="#EF4444"/> Ticketı Sil
-            </button>
-          </div>
-        )}
       </div>
     );
   };
@@ -1000,11 +983,6 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
           <button onClick={()=>setSel(null)} style={{ background:"none", border:"none", cursor:"pointer", color:T.text3, fontSize:14, display:"flex", alignItems:"center", gap:6, padding:0 }}>
             ← Taleplere Dön
           </button>
-          {isAdmin && (
-            <button onClick={()=>setConfirmDelete({ticket:sel})} style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 16px", borderRadius:10, border:"1px solid #EF444440", background:"#EF444415", color:"#EF4444", fontSize:13, fontWeight:600, cursor:"pointer" }}>
-              <Icon name="trash" size={14} color="#EF4444"/> Ticketı Sil
-            </button>
-          )}
         </div>
 
         <div style={{ display:"grid", gridTemplateColumns:"1fr 320px", gap:20 }}>
@@ -1351,18 +1329,6 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
         </Modal>
       )}
 
-      {/* Ticket silme onay modalı */}
-      {confirmDelete && (
-        <ConfirmModal
-          title="Ticketı Sil"
-          message={`"${confirmDelete.ticket.no} — ${confirmDelete.ticket.title}" ticketını kalıcı olarak silmek istediğinizden emin misiniz?`}
-          detail="⚠️ Bu işlem geri alınamaz. Ticketa ait tüm e-posta yazışmaları ve efor kayıtları da silinecektir."
-          confirmLabel="Evet, Sil"
-          loading={deleting}
-          onConfirm={()=>deleteTicket(confirmDelete.ticket)}
-          onClose={()=>setConfirmDelete(null)}
-        />
-      )}
     </div>
   );
 };
