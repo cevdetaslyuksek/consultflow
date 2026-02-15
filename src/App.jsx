@@ -1918,6 +1918,15 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
     }]);
     setSaving(false);
     if (error) { showToast(error.message,"error"); return; }
+    // Bildirim oluştur
+    const ticket = tickets?.find(t => t.no === form.ticket_no);
+    await createNotification({
+      type: "efor_added",
+      message: `[${form.ticket_no}] ${ticket?.title || form.ticket_no} — ${form.hours}h efor eklendi`,
+      detail: `${profile.full_name||profile.email}: ${form.description||""}`,
+      company_id: form.company_id || ticket?.company_id || null,
+      ref_id: ticket?.id || null, ref_type: "ticket"
+    });
     showToast("Efor eklendi!"); setShowAdd(false); load();
   };
 
@@ -4019,6 +4028,11 @@ function AppInner() {
       setAllUsers((allProfs || []).filter(u => u.email));
       // Unread notifications count — tablo yoksa sessizce geç
       try {
+        // 7 günden eski bildirimleri otomatik sil
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        await supabase.from("notifications").delete().lt("created_at", weekAgo.toISOString());
+        // Okunmamış sayısını güncelle
         const { count } = await supabase.from("notifications").select("*", { count:"exact", head:true }).eq("read", false);
         setUnreadCount(count || 0);
       } catch(_) { setUnreadCount(0); }
