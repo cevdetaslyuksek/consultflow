@@ -327,7 +327,7 @@ const LoginPage = ({ onLogin }) => {
       <div style={{ position:"relative", background:T.card, border:`1px solid ${T.border}`, borderRadius:20, padding:40, width:"100%", maxWidth:400, boxShadow:"0 24px 80px rgba(0,0,0,0.5)" }}>
         <div style={{ textAlign:"center", marginBottom:32 }}>
           <img src={LOGO_SRC} alt="ConsultFlow" style={{ width:110, height:110, objectFit:"contain", margin:"0 auto 12px", display:"block", filter:"drop-shadow(0 4px 20px rgba(99,102,241,0.3))" }}/>
-          <h1 style={{ margin:0, fontSize:24, fontWeight:800, background:T.grad, WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>ConsultFlow</h1>
+          <h1 style={{ margin:0, fontSize:24, fontWeight:800, color:T.accent2 }}>ConsultFlow</h1>
           <p style={{ margin:"6px 0 0", color:T.text3, fontSize:14 }}>Danışmanlık Yönetim Platformu</p>
         </div>
         <Inp label="E-posta" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="ornek@firma.com" onKeyDown={e=>e.key==="Enter"&&submit()} />
@@ -337,6 +337,101 @@ const LoginPage = ({ onLogin }) => {
         </Btn>
       </div>
     </div>
+  );
+};
+
+// ─── MOBİL ALT NAVİGASYON ────────────────────────────────────────────────────
+const MobileNav = ({ page, setPage, profile, onLogout, unreadCount, themeT }) => {
+  const { T } = useTheme();
+  const isAdmin = profile?.role === "admin";
+  const isCons  = profile?.role === "consultant";
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Ana sekmeler (max 4 + "Daha Fazla")
+  const mainNav = [
+    { id:"dashboard", label:"Ana Sayfa", icon:"dashboard" },
+    { id:"tickets",   label:"Talepler",  icon:"tickets" },
+    { id:"projects",  label:"Projeler",  icon:"folder" },
+    { id:"notifications", label:"Bildirim", icon:"bell", badge: unreadCount },
+  ];
+
+  // Daha fazla menüsü
+  const moreNav = [
+    ...(!isAdmin && !isCons ? [] : [{ id:"companies",  label:"Firmalar",   icon:"companies" }]),
+    ...(!isAdmin && !isCons ? [] : [{ id:"timesheet",  label:"Efor Takip", icon:"timesheet" }]),
+    ...(!isAdmin ? [] : [{ id:"invoices",  label:"Faturalar",       icon:"invoice"  }]),
+    ...(!isAdmin ? [] : [{ id:"reports",   label:"Raporlar",        icon:"reports"  }]),
+    ...(!isAdmin ? [] : [{ id:"users",     label:"Kullanıcılar",    icon:"userplus" }]),
+    ...(!isAdmin ? [] : [{ id:"ayarlar",   label:"Platform Ayrları",icon:"settings" }]),
+  ];
+
+  return (
+    <>
+      {/* Backdrop */}
+      {menuOpen && (
+        <div onClick={()=>setMenuOpen(false)} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.5)", zIndex:998 }}/>
+      )}
+
+      {/* Daha Fazla slide-up menüsü */}
+      {menuOpen && (
+        <div style={{ position:"fixed", bottom:70, left:0, right:0, background:T.bg2, borderRadius:"20px 20px 0 0", zIndex:999, padding:"16px 8px 8px", border:`1px solid ${T.border}`, boxShadow:"0 -8px 40px rgba(0,0,0,0.3)" }}>
+          <div style={{ width:40, height:4, background:T.border2, borderRadius:2, margin:"0 auto 16px" }}/>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:4, marginBottom:12 }}>
+            {moreNav.map(n => (
+              <button key={n.id} onClick={()=>{ setPage(n.id); setMenuOpen(false); }} style={{
+                display:"flex", flexDirection:"column", alignItems:"center", gap:5, padding:"12px 4px",
+                borderRadius:12, border:"none", cursor:"pointer",
+                background: page===n.id ? `${T.accent}20` : "transparent",
+                color: page===n.id ? T.accent2 : T.text2,
+              }}>
+                <Icon name={n.icon} size={22} color={page===n.id ? T.accent : T.text3}/>
+                <span style={{ fontSize:10, fontWeight:600, textAlign:"center", lineHeight:1.2 }}>{n.label}</span>
+              </button>
+            ))}
+          </div>
+          <div style={{ borderTop:`1px solid ${T.border}`, paddingTop:8, display:"flex", gap:8 }}>
+            <button onClick={onLogout} style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"10px", borderRadius:10, border:`1px solid ${T.border}`, background:"transparent", color:T.text3, fontSize:13, cursor:"pointer" }}>
+              <Icon name="logout" size={16}/> Çıkış
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Alt Tab Bar */}
+      <div className="cf-bottomnav" style={{
+        position:"fixed", bottom:0, left:0, right:0, zIndex:997,
+        background:T.bg2, borderTop:`1px solid ${T.border}`,
+        display:"none", alignItems:"stretch",
+        paddingBottom:"env(safe-area-inset-bottom, 0px)",
+        boxShadow:"0 -4px 20px rgba(0,0,0,0.2)",
+      }}>
+        {mainNav.map(n => (
+          <button key={n.id} onClick={()=>setPage(n.id)} style={{
+            flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+            gap:3, padding:"10px 4px 8px", border:"none", cursor:"pointer",
+            background:"transparent",
+            color: page===n.id ? T.accent : T.text3,
+          }}>
+            <div style={{ position:"relative" }}>
+              <Icon name={n.icon} size={22} color={page===n.id ? T.accent : T.text3}/>
+              {n.badge > 0 && <span style={{ position:"absolute", top:-4, right:-6, background:"#EF4444", color:"#fff", fontSize:9, fontWeight:700, padding:"1px 4px", borderRadius:10, minWidth:14, textAlign:"center" }}>{n.badge > 9 ? "9+" : n.badge}</span>}
+            </div>
+            <span style={{ fontSize:10, fontWeight: page===n.id ? 700 : 400 }}>{n.label}</span>
+            {page===n.id && <div style={{ width:16, height:2, background:T.accent, borderRadius:1 }}/>}
+          </button>
+        ))}
+        {/* Daha Fazla butonu */}
+        <button onClick={()=>setMenuOpen(m=>!m)} style={{
+          flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
+          gap:3, padding:"10px 4px 8px", border:"none", cursor:"pointer",
+          background: menuOpen ? `${T.accent}15` : "transparent",
+          color: menuOpen ? T.accent : T.text3,
+        }}>
+          <Icon name="filter" size={22} color={menuOpen ? T.accent : T.text3}/>
+          <span style={{ fontSize:10, fontWeight: menuOpen ? 700 : 400 }}>Daha Fazla</span>
+        </button>
+      </div>
+    </>
   );
 };
 
@@ -362,7 +457,7 @@ const Sidebar = ({ page, setPage, profile, onLogout, unreadCount = 0 }) => {
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <img src={LOGO_SRC} alt="CF" style={{ width:36, height:36, objectFit:"contain" }}/>
           <div>
-            <div style={{ fontSize:14, fontWeight:800, background:T.grad, WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>ConsultFlow</div>
+            <div style={{ fontSize:14, fontWeight:800, color:T.accent2 }}>ConsultFlow</div>
             <div style={{ fontSize:11, color:T.text3 }}>v5.4</div>
           </div>
         </div>
@@ -428,7 +523,7 @@ const Sidebar = ({ page, setPage, profile, onLogout, unreadCount = 0 }) => {
 
 // ─── PAGE HEADER ─────────────────────────────────────────────────────────────
 const PageHeader = ({ title, subtitle, action }) => (
-  <div style={{ marginBottom:24, display:"flex", alignItems:"flex-start", justifyContent:"space-between" }}>
+  <div className="cf-page-header" style={{ marginBottom:24, display:"flex", alignItems:"flex-start", justifyContent:"space-between" }}>
     <div>
       <h2 style={{ margin:0, fontSize:22, fontWeight:800, color:T.text }}>{title}</h2>
       {subtitle && <p style={{ margin:"4px 0 0", color:T.text3, fontSize:14 }}>{subtitle}</p>}
@@ -728,7 +823,10 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
   // Filter & sort
   const filtered = tickets
     .filter(t => {
-      if (fStatus !== "all" && t.status !== fStatus) return false;
+      if (fStatus === "unassigned") {
+        const assignees = Array.isArray(t.assignees) ? t.assignees : (t.assignee ? [t.assignee] : []);
+        if (assignees.length > 0) return false;
+      } else if (fStatus !== "all" && t.status !== fStatus) return false;
       if (fCompany !== "all" && t.company_id !== fCompany) return false;
       if (fConsultant !== "all") {
         const assignees = Array.isArray(t.assignees) ? t.assignees : (t.assignee ? [t.assignee] : []);
@@ -1192,7 +1290,7 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
       />
 
       {/* Filters */}
-      <div style={{ display:"flex", gap:10, marginBottom:20, flexWrap:"wrap", alignItems:"center" }}>
+      <div className="cf-filters" style={{ display:"flex", gap:10, marginBottom:20, flexWrap:"wrap", alignItems:"center" }}>
         {/* Search */}
         <div style={{ position:"relative", flex:1, minWidth:200 }}>
           <div style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)" }}><Icon name="search" size={15} color={T.text3}/></div>
@@ -1203,6 +1301,7 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
         {/* Status filter */}
         <select value={fStatus} onChange={e=>setFStatus(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
           <option value="all">Tüm Durumlar</option>
+          <option value="unassigned">⚠️ Atanmamış</option>
           {Object.entries(STATUS_CONFIG).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
 
@@ -1242,7 +1341,7 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
 
       {/* Ticket list/grid */}
       {view === "card" ? (
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))", gap:14 }}>
+        <div className="cf-card-grid" style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))", gap:14 }}>
           {filtered.map(t => <TicketCard key={t.id} t={t}/>)}
         </div>
       ) : (
@@ -1347,7 +1446,7 @@ const DashboardPage = ({ profile, tickets, companies, consultants }) => {
   return (
     <div>
       <PageHeader title="Dashboard" subtitle={`Hoş geldiniz, ${profile?.full_name||"kullanıcı"}!`}/>
-      <div style={{ display:"flex", gap:16, marginBottom:24, flexWrap:"wrap" }}>
+      <div className="cf-stat-grid" style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))", gap:12, marginBottom:24 }}>
         <StatCard label="Toplam Talep" value={stats.total} icon="tickets" color={T.accent}/>
         <StatCard label="Açık" value={stats.open} icon="zap" color="#60A5FA"/>
         <StatCard label="İşlemde" value={stats.inprogress} icon="clock" color={T.purple}/>
@@ -4062,13 +4161,53 @@ function AppInner() {
         select option { background:${themeT.bg2}; color:${themeT.text}; }
         @keyframes slideIn { from { transform:translateY(20px); opacity:0; } to { transform:translateY(0); opacity:1; } }
         @keyframes cfSpin   { to { transform: rotate(360deg); } }
+
+        /* ── MOBİL ── */
+        @media (max-width: 768px) {
+          .cf-sidebar   { display: none !important; }
+          .cf-main      { padding: 16px 12px 90px !important; }
+          .cf-bottomnav { display: flex !important; }
+
+          /* Kart grid tek sütun */
+          .cf-card-grid { grid-template-columns: 1fr !important; }
+
+          /* Filtre satırı scroll */
+          .cf-filters   { flex-wrap: nowrap !important; overflow-x: auto !important; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+          .cf-filters select, .cf-filters input { flex-shrink: 0; min-width: 130px; font-size:12px !important; padding: 7px 10px !important; }
+
+          /* Tablo satırları dikey */
+          .cf-row-desktop { display: none !important; }
+          .cf-row-mobile  { display: flex !important; }
+
+          /* PageHeader action alt satıra */
+          .cf-page-header { flex-direction: column !important; gap: 10px !important; align-items: flex-start !important; }
+          .cf-page-header h2 { font-size: 18px !important; }
+
+          /* Modal tam ekran */
+          .cf-modal-inner { width: 100% !important; max-width: 100% !important; margin: 0 !important; border-radius: 16px 16px 0 0 !important; position: fixed !important; bottom: 0 !important; left: 0 !important; right: 0 !important; top: auto !important; }
+          .cf-modal-wrap  { align-items: flex-end !important; }
+
+          /* Stat kartlar 2x2 */
+          .cf-stat-grid { grid-template-columns: 1fr 1fr !important; }
+
+          /* Invoice/detail grid tek sütun */
+          .cf-detail-grid { grid-template-columns: 1fr !important; }
+        }
+
+        @media (min-width: 769px) {
+          .cf-bottomnav { display: none !important; }
+        }
       `}</style>
       <div style={{ display:"flex", minHeight:"100vh" }}>
-        <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} unreadCount={unreadCount}/>
-        <main style={{ flex:1, overflowY:"auto", padding:28, background:themeT.bg }}>
+        <div className="cf-sidebar">
+          <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} unreadCount={unreadCount}/>
+        </div>
+        <main className="cf-main" style={{ flex:1, overflowY:"auto", padding:28, background:themeT.bg }}>
           {renderPage()}
         </main>
       </div>
+      {/* ── MOBİL ALT NAV ── */}
+      <MobileNav page={page} setPage={setPage} profile={profile} onLogout={handleLogout} unreadCount={unreadCount} themeT={themeT}/>
       <ToastContainer/>
     </>
   );
