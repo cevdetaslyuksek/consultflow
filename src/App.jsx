@@ -889,15 +889,13 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
             <div style={{ display:"flex", gap:6, alignItems:"center" }}>
               <Badge color={pc.color} bg={pc.bg}>{pc.label}</Badge>
               <Badge color={sc.color} bg={sc.bg}>{sc.label}</Badge>
-              {isAdmin && (
-                <button
-                  onClick={e=>{e.stopPropagation();setConfirmDelete({ticket:t});}}
-                  title="Ticketı Sil"
-                  style={{ background:"#EF444422", border:"1px solid #EF444455", borderRadius:7, padding:"3px 8px", cursor:"pointer", display:"flex", alignItems:"center", gap:4, marginLeft:2, color:"#EF4444", fontSize:11, fontWeight:700 }}
-                >
-                  <Icon name="trash" size={11} color="#EF4444"/>🗑
-                </button>
-              )}
+              <button
+                onClick={e=>{e.stopPropagation(); if(profile?.role==="admin") setConfirmDelete({ticket:t}); }}
+                title="Sil"
+                style={{ background:"#EF444422", border:"1px solid #EF444455", borderRadius:7, padding:"3px 8px", cursor:"pointer", display: profile?.role==="admin" ? "flex" : "none", alignItems:"center", gap:4, marginLeft:2, color:"#EF4444", fontSize:11, fontWeight:700 }}
+              >
+                <Icon name="trash" size={12} color="#EF4444"/> Sil
+              </button>
             </div>
           </div>
           <h4 style={{ margin:"0 0 8px", fontSize:14, fontWeight:700, color:T.text, lineHeight:1.4 }}>{t.title}</h4>
@@ -930,6 +928,16 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
           </div>
           <div style={{ marginTop:8, fontSize:11, color:T.text3 }}>{new Date(t.created_at).toLocaleDateString("tr-TR")}</div>
         </div>
+        {profile?.role === "admin" && (
+          <div onClick={e=>e.stopPropagation()} style={{ padding:"0 16px 12px" }}>
+            <button
+              onClick={e=>{e.stopPropagation(); setConfirmDelete({ticket:t});}}
+              style={{ width:"100%", padding:"7px", borderRadius:8, border:"1px solid #EF444440", background:"#EF444415", color:"#EF4444", fontSize:12, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}
+            >
+              <Icon name="trash" size={13} color="#EF4444"/> Ticketı Sil
+            </button>
+          </div>
+        )}
       </div>
     );
   };
