@@ -113,19 +113,16 @@ const EMAILJS_TEMPLATE_ID = "template_gjnd4di";
 async function sendEmail({ to_email, to_name, subject, body }) {
   try {
     if (window.emailjs) {
-      await window.emailjs.send(
-        EMAILJS_SERVICE_ID,
-        EMAILJS_TEMPLATE_ID,
-        {
-          to_email,           // Template: {{to_email}}
-          to_name,            // Template: {{to_name}}  (From Name alanında)
-          name: to_name,      // Template: {{name}}     (içerik alanında)
-          email: to_email,    // Template: {{email}}    (Reply To alanında)
-          subject,            // Template: {{subject}}
-          message: body,      // Template: {{message}}
-          from_name: "ConsultFlow",
-        }
-      );
+      const params = {
+        to_email,
+        to_name,
+        from_name:  "ConsultFlow",
+        name:       "ConsultFlow",   // template {{name}} için
+        email:      to_email,        // template {{email}} için
+        subject,
+        message:    body,
+      };
+      await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, params);
     } else {
       console.warn("EmailJS yüklenmedi");
     }
