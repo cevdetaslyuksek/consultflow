@@ -1,4 +1,3 @@
-
 // ConsultFlow v4.0 - Full Featured
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
