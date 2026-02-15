@@ -1,3 +1,4 @@
+
 // ConsultFlow v4.0 - Full Featured
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
@@ -181,7 +182,6 @@ const Icon = ({ name, size = 16, color }) => {
     folder:     <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>,
     activity:   <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
     dotcircle:  <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>,
-    settings:   <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>,
   };
   return icons[name] || null;
 };
@@ -353,8 +353,7 @@ const Sidebar = ({ page, setPage, profile, onLogout, unreadCount = 0 }) => {
     ...(!isAdmin && !isCons ? [] : [{ id:"timesheet",  label:"Efor Takip",   icon:"timesheet" }]),
     ...(!isAdmin ? [] : [{ id:"invoices",   label:"Faturalar",    icon:"invoice" }]),
     ...(!isAdmin ? [] : [{ id:"reports",    label:"Raporlar",     icon:"reports" }]),
-    ...(!isAdmin ? [] : [{ id:"users",      label:"Kullanıcılar",      icon:"userplus" }]),
-    ...(!isAdmin ? [] : [{ id:"ayarlar",    label:"Platform Ayarları", icon:"settings" }]),
+    ...(!isAdmin ? [] : [{ id:"users",      label:"Kullanıcılar", icon:"userplus" }]),
   ];
   return (
     <div style={{ width:220, background:T.bg2, borderRight:`1px solid ${T.border}`, display:"flex", flexDirection:"column", flexShrink:0, height:"100vh", position:"sticky", top:0 }}>
@@ -891,13 +890,15 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
             <div style={{ display:"flex", gap:6, alignItems:"center" }}>
               <Badge color={pc.color} bg={pc.bg}>{pc.label}</Badge>
               <Badge color={sc.color} bg={sc.bg}>{sc.label}</Badge>
-              <button
-                onClick={e=>{e.stopPropagation(); if(profile?.role==="admin") setConfirmDelete({ticket:t}); }}
-                title="Sil"
-                style={{ background:"#EF444422", border:"1px solid #EF444455", borderRadius:7, padding:"3px 8px", cursor:"pointer", display: profile?.role==="admin" ? "flex" : "none", alignItems:"center", gap:4, marginLeft:2, color:"#EF4444", fontSize:11, fontWeight:700 }}
-              >
-                <Icon name="trash" size={12} color="#EF4444"/> Sil
-              </button>
+              {isAdmin && (
+                <button
+                  onClick={e=>{e.stopPropagation();setConfirmDelete({ticket:t});}}
+                  title="Ticketı Sil"
+                  style={{ background:"#EF444422", border:"1px solid #EF444455", borderRadius:7, padding:"3px 8px", cursor:"pointer", display:"flex", alignItems:"center", gap:4, marginLeft:2, color:"#EF4444", fontSize:11, fontWeight:700 }}
+                >
+                  <Icon name="trash" size={11} color="#EF4444"/>🗑
+                </button>
+              )}
             </div>
           </div>
           <h4 style={{ margin:"0 0 8px", fontSize:14, fontWeight:700, color:T.text, lineHeight:1.4 }}>{t.title}</h4>
@@ -930,16 +931,6 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
           </div>
           <div style={{ marginTop:8, fontSize:11, color:T.text3 }}>{new Date(t.created_at).toLocaleDateString("tr-TR")}</div>
         </div>
-        {profile?.role === "admin" && (
-          <div onClick={e=>e.stopPropagation()} style={{ padding:"0 16px 12px" }}>
-            <button
-              onClick={e=>{e.stopPropagation(); setConfirmDelete({ticket:t});}}
-              style={{ width:"100%", padding:"7px", borderRadius:8, border:"1px solid #EF444440", background:"#EF444415", color:"#EF4444", fontSize:12, fontWeight:700, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}
-            >
-              <Icon name="trash" size={13} color="#EF4444"/> Ticketı Sil
-            </button>
-          </div>
-        )}
       </div>
     );
   };
@@ -3705,245 +3696,6 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
   );
 };
 
-// ─── PLATFORM AYARLARI ───────────────────────────────────────────────────────
-const PlatformAyarlari = ({ companies, reload: reloadAll }) => {
-  const [tab, setTab]           = useState("tickets");   // tickets | companies | projects | invoices
-  const [data, setData]         = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [search, setSearch]     = useState("");
-  const [confirm, setConfirm]   = useState(null);  // { type, item }
-  const [deleting, setDeleting] = useState(false);
-
-  useEffect(() => { loadTab(tab); setSearch(""); }, [tab]);
-
-  const loadTab = async (t) => {
-    setLoading(true);
-    let q;
-    if (t === "tickets")   q = supabase.from("tickets").select("*").order("created_at", { ascending:false });
-    if (t === "companies") q = supabase.from("companies").select("*").order("name");
-    if (t === "projects")  q = supabase.from("projects").select("*").order("created_at", { ascending:false });
-    if (t === "invoices")  q = supabase.from("invoices").select("*").order("created_at", { ascending:false });
-    const { data: rows } = await q;
-    setData(rows || []);
-    setLoading(false);
-  };
-
-  // ── SİLME FONKSİYONLARI ──────────────────────────────────────────────────
-  const doDelete = async () => {
-    if (!confirm) return;
-    setDeleting(true);
-    const { type, item } = confirm;
-    try {
-      if (type === "ticket") {
-        await supabase.from("ticket_messages").delete().eq("ticket_id", item.id);
-        await supabase.from("time_entries").delete().eq("ticket_no", item.no);
-        await supabase.from("notifications").delete().eq("ref_id", item.id).eq("ref_type","ticket");
-        const { error } = await supabase.from("tickets").delete().eq("id", item.id);
-        if (error) throw error;
-        showToast(`${item.no} silindi!`);
-      }
-      if (type === "company") {
-        const { data: tkts } = await supabase.from("tickets").select("id,no").eq("company_id", item.id);
-        if (tkts?.length) {
-          for (const t of tkts) {
-            await supabase.from("ticket_messages").delete().eq("ticket_id", t.id);
-            if (t.no) await supabase.from("time_entries").delete().eq("ticket_no", t.no);
-          }
-          await supabase.from("tickets").delete().in("id", tkts.map(t=>t.id));
-        }
-        const { data: prjs } = await supabase.from("projects").select("id").eq("company_id", item.id);
-        if (prjs?.length) {
-          await supabase.from("project_efors").delete().in("project_id", prjs.map(p=>p.id));
-          await supabase.from("projects").delete().in("id", prjs.map(p=>p.id));
-        }
-        await supabase.from("time_entries").delete().eq("company_id", item.id);
-        await supabase.from("invoices").delete().eq("company_id", item.id);
-        await supabase.from("notifications").delete().eq("company_id", item.id);
-        const { error } = await supabase.from("companies").delete().eq("id", item.id);
-        if (error) throw error;
-        showToast(`${item.name} silindi!`);
-        if (reloadAll) reloadAll();
-      }
-      if (type === "project") {
-        await supabase.from("project_efors").delete().eq("project_id", item.id);
-        await supabase.from("notifications").delete().eq("ref_id", item.id).eq("ref_type","project");
-        const { error } = await supabase.from("projects").delete().eq("id", item.id);
-        if (error) throw error;
-        showToast(`${item.name} silindi!`);
-      }
-      if (type === "invoice") {
-        const items = Array.isArray(item.items) ? item.items : [];
-        const nos   = [...new Set(items.map(i=>i.ticket_no).filter(Boolean))];
-        if (nos.length) await supabase.from("time_entries").update({ billed:false }).in("ticket_no", nos).eq("company_id", item.company_id);
-        const { error } = await supabase.from("invoices").delete().eq("id", item.id);
-        if (error) throw error;
-        showToast(`${item.invoice_no||"Fatura"} silindi!`);
-      }
-      setConfirm(null);
-      loadTab(tab);
-    } catch(err) {
-      showToast(err.message, "error");
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  // ── FİLTRELEME ───────────────────────────────────────────────────────────
-  const filtered = data.filter(row => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    if (tab === "tickets")   return row.no?.toLowerCase().includes(q) || row.title?.toLowerCase().includes(q);
-    if (tab === "companies") return row.name?.toLowerCase().includes(q);
-    if (tab === "projects")  return row.no?.toLowerCase().includes(q) || row.name?.toLowerCase().includes(q);
-    if (tab === "invoices")  return row.invoice_no?.toLowerCase().includes(q);
-    return true;
-  });
-
-  // ── ONAY METİNLERİ ────────────────────────────────────────────────────────
-  const confirmText = {
-    ticket:  (i) => ({ title:"Ticket'ı Sil", msg:`"${i.no} — ${i.title}"`, detail:"Tüm mesajlar ve efor kayıtları da silinir." }),
-    company: (i) => ({ title:"Firmayı Sil",  msg:`"${i.name}"`,             detail:"Tüm ticketlar, projeler, faturalar ve eforlar silinir." }),
-    project: (i) => ({ title:"Projeyi Sil",  msg:`"${i.name}"`,             detail:"Projeye ait tüm efor kayıtları da silinir." }),
-    invoice: (i) => ({ title:"Faturayı Sil", msg:`"${i.invoice_no}"`,       detail:"Bağlı eforlar tekrar 'Bekliyor' durumuna döner." }),
-  };
-
-  const TABS = [
-    { id:"tickets",   label:"Talepler",  icon:"tickets",  color:"#6366F1" },
-    { id:"companies", label:"Firmalar",  icon:"building", color:"#0EA5E9" },
-    { id:"projects",  label:"Projeler",  icon:"folder",   color:"#10B981" },
-    { id:"invoices",  label:"Faturalar", icon:"invoice",  color:"#F59E0B" },
-  ];
-
-  const co = (id) => companies?.find(c=>c.id===id)?.name || "—";
-
-  return (
-    <div>
-      <PageHeader
-        title="Platform Ayarları"
-        subtitle="Kayıtları yönet ve sil"
-        action={<div style={{ background:`${T.error}15`, border:`1px solid ${T.error}30`, borderRadius:10, padding:"8px 14px", fontSize:13, color:T.error, fontWeight:600 }}>⚠️ Yalnızca Yönetici</div>}
-      />
-
-      {/* Tab bar */}
-      <div style={{ display:"flex", gap:8, marginBottom:24 }}>
-        {TABS.map(t => (
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{
-            flex:1, padding:"12px 8px", borderRadius:12, border:`2px solid ${tab===t.id ? t.color : T.border}`,
-            background: tab===t.id ? t.color+"18" : T.card,
-            color: tab===t.id ? t.color : T.text2,
-            cursor:"pointer", fontSize:13, fontWeight: tab===t.id ? 700 : 400,
-            display:"flex", alignItems:"center", justifyContent:"center", gap:8,
-            transition:"all 0.15s"
-          }}>
-            <Icon name={t.icon} size={16} color={tab===t.id ? t.color : T.text3}/>
-            {t.label}
-            {!loading && tab===t.id && <span style={{ fontSize:12, background:t.color+"25", color:t.color, borderRadius:20, padding:"1px 8px", fontWeight:700 }}>{data.length}</span>}
-          </button>
-        ))}
-      </div>
-
-      {/* Arama */}
-      <div style={{ position:"relative", marginBottom:16 }}>
-        <div style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)" }}>
-          <Icon name="search" size={16} color={T.text3}/>
-        </div>
-        <input
-          value={search} onChange={e=>setSearch(e.target.value)}
-          placeholder={`${TABS.find(t=>t.id===tab)?.label} ara...`}
-          style={{ width:"100%", background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"10px 14px 10px 42px", color:T.text, fontSize:14, outline:"none", boxSizing:"border-box" }}
-          onFocus={e=>e.target.style.borderColor=T.accent}
-          onBlur={e=>e.target.style.borderColor=T.border}
-        />
-      </div>
-
-      {/* Tablo */}
-      <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, overflow:"hidden" }}>
-        {loading ? (
-          <div style={{ textAlign:"center", padding:60, color:T.text3 }}>Yükleniyor...</div>
-        ) : filtered.length === 0 ? (
-          <div style={{ textAlign:"center", padding:60, color:T.text3 }}>Kayıt bulunamadı</div>
-        ) : (
-          filtered.map((row, i) => {
-            const alt = i % 2 === 1;
-            return (
-              <div key={row.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"12px 18px", borderBottom:`1px solid ${T.border}`, background: alt ? T.bg3+"80" : "transparent" }}>
-
-                {/* TICKET SATIRI */}
-                {tab === "tickets" && <>
-                  <span style={{ fontSize:12, fontWeight:700, color:T.accent2, fontFamily:"monospace", width:100, flexShrink:0 }}>{row.no}</span>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:14, fontWeight:600, color:T.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{row.title}</div>
-                    <div style={{ fontSize:12, color:T.text3, marginTop:2 }}>{co(row.company_id)} · {new Date(row.created_at).toLocaleDateString("tr-TR")}</div>
-                  </div>
-                  <span style={{ fontSize:12, padding:"3px 10px", borderRadius:20, background:(STATUS_CONFIG[row.status]?.color||"#888")+"25", color:STATUS_CONFIG[row.status]?.color||"#888", fontWeight:600, flexShrink:0 }}>{STATUS_CONFIG[row.status]?.label||row.status}</span>
-                  <span style={{ fontSize:12, padding:"3px 10px", borderRadius:20, background:(PRIORITY_CONFIG[row.priority]?.color||"#888")+"25", color:PRIORITY_CONFIG[row.priority]?.color||"#888", fontWeight:600, flexShrink:0 }}>{PRIORITY_CONFIG[row.priority]?.label||row.priority}</span>
-                </>}
-
-                {/* FİRMA SATIRI */}
-                {tab === "companies" && <>
-                  <div style={{ width:38, height:38, borderRadius:10, background:T.grad, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, fontWeight:800, color:"#fff", flexShrink:0 }}>
-                    {row.name?.[0]?.toUpperCase()}
-                  </div>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:14, fontWeight:700, color:T.text }}>{row.name}</div>
-                    <div style={{ fontSize:12, color:T.text3, marginTop:2 }}>{row.email||"—"} · {row.phone||"—"}</div>
-                  </div>
-                  <div style={{ fontSize:12, color:T.text3, flexShrink:0 }}>{new Date(row.created_at).toLocaleDateString("tr-TR")}</div>
-                </>}
-
-                {/* PROJE SATIRI */}
-                {tab === "projects" && <>
-                  <span style={{ fontSize:12, fontWeight:700, color:T.teal, fontFamily:"monospace", width:100, flexShrink:0 }}>{row.no}</span>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:14, fontWeight:600, color:T.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{row.name}</div>
-                    <div style={{ fontSize:12, color:T.text3, marginTop:2 }}>{co(row.company_id)} · {new Date(row.created_at).toLocaleDateString("tr-TR")}</div>
-                  </div>
-                  <span style={{ fontSize:12, padding:"3px 10px", borderRadius:20, background:T.teal+"20", color:T.teal, fontWeight:600, flexShrink:0 }}>{row.status}</span>
-                </>}
-
-                {/* FATURA SATIRI */}
-                {tab === "invoices" && <>
-                  <span style={{ fontSize:12, fontWeight:700, color:T.success, fontFamily:"monospace", width:120, flexShrink:0 }}>{row.invoice_no}</span>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:14, fontWeight:600, color:T.text }}>{co(row.company_id)}</div>
-                    <div style={{ fontSize:12, color:T.text3, marginTop:2 }}>{new Date(row.created_at).toLocaleDateString("tr-TR")}</div>
-                  </div>
-                  <span style={{ fontSize:14, fontWeight:800, color:T.success, flexShrink:0 }}>₺{(row.total||0).toLocaleString()}</span>
-                  <span style={{ fontSize:12, padding:"3px 10px", borderRadius:20, background:(row.paid?T.success:T.warning)+"20", color:row.paid?T.success:T.warning, fontWeight:600, flexShrink:0 }}>{row.paid?"Ödendi":"Bekliyor"}</span>
-                </>}
-
-                {/* SİL BUTONU — HER SATIR */}
-                <button
-                  onClick={()=>setConfirm({ type: tab==="tickets"?"ticket": tab==="companies"?"company": tab==="projects"?"project":"invoice", item:row })}
-                  style={{ background:"#EF444420", border:"1px solid #EF444445", borderRadius:9, padding:"7px 14px", cursor:"pointer", color:"#EF4444", fontSize:12, fontWeight:700, display:"flex", alignItems:"center", gap:6, flexShrink:0, whiteSpace:"nowrap" }}
-                >
-                  <Icon name="trash" size={13} color="#EF4444"/> Sil
-                </button>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* Onay Modalı */}
-      {confirm && (() => {
-        const ct = confirmText[confirm.type]?.(confirm.item);
-        return (
-          <ConfirmModal
-            title={ct.title}
-            message={`${ct.msg} kaydını kalıcı olarak silmek istiyor musunuz?`}
-            detail={`⚠️ ${ct.detail} Bu işlem geri alınamaz.`}
-            confirmLabel="Evet, Sil"
-            loading={deleting}
-            onConfirm={doDelete}
-            onClose={()=>setConfirm(null)}
-          />
-        );
-      })()}
-    </div>
-  );
-};
-
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
 // ─── THEME PROVIDER ───────────────────────────────────────────────────────────
 function ThemeProvider({ children }) {
@@ -4065,7 +3817,6 @@ function AppInner() {
       case "reports":       return <ReportsPage tickets={tickets} companies={companies} consultants={consultants}/>;
       case "users":         return <UsersPage companies={companies} onReload={loadAll}/>;
       case "notifications": return <NotificationsPage profile={profile} companies={companies} consultants={consultants}/>;
-      case "ayarlar":       return <PlatformAyarlari companies={companies} reload={loadAll}/>;
       default:              return null;
     }
   };
