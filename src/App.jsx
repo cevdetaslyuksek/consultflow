@@ -361,7 +361,7 @@ const Sidebar = ({ page, setPage, profile, onLogout, unreadCount = 0 }) => {
           <img src={LOGO_SRC} alt="CF" style={{ width:36, height:36, objectFit:"contain" }}/>
           <div>
             <div style={{ fontSize:14, fontWeight:800, background:T.grad, WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent" }}>ConsultFlow</div>
-            <div style={{ fontSize:11, color:T.text3 }}>v4.0</div>
+            <div style={{ fontSize:11, color:T.text3 }}>v5.4</div>
           </div>
         </div>
       </div>
@@ -707,7 +707,6 @@ const EmailThread = ({ ticket, profile, companies, allUsers = [] }) => {
 
 // ─── TICKETS PAGE ────────────────────────────────────────────────────────────
 const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, tickets, allUsers = [] }) => {
-  const { T } = useTheme();
   const isAdmin    = profile?.role === "admin";
   const isCons     = profile?.role === "consultant";
   const isCustomer = profile?.role === "customer";
@@ -871,7 +870,6 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
 
   // ── TICKET CARD ──
   const TicketCard = ({ t }) => {
-    const { T } = useTheme();
     const pc = PRIORITY_CONFIG[t.priority] || PRIORITY_CONFIG.Medium;
     const sc = STATUS_CONFIG[t.status]     || STATUS_CONFIG.Open;
     const company = companies.find(c=>c.id===t.company_id);
@@ -895,9 +893,9 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
                 <button
                   onClick={e=>{e.stopPropagation();setConfirmDelete({ticket:t});}}
                   title="Ticketı Sil"
-                  style={{ background:"#EF444425", border:"1px solid #EF444450", borderRadius:7, padding:"3px 6px", cursor:"pointer", display:"flex", alignItems:"center", marginLeft:2 }}
+                  style={{ background:"#EF444422", border:"1px solid #EF444455", borderRadius:7, padding:"3px 8px", cursor:"pointer", display:"flex", alignItems:"center", gap:4, marginLeft:2, color:"#EF4444", fontSize:11, fontWeight:700 }}
                 >
-                  <Icon name="trash" size={13} color="#EF4444"/>
+                  <Icon name="trash" size={11} color="#EF4444"/>🗑
                 </button>
               )}
             </div>
@@ -938,7 +936,6 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
 
   // ── TICKET ROW (list view) ──
   const TicketRow = ({ t }) => {
-    const { T } = useTheme();
     const pc = PRIORITY_CONFIG[t.priority] || PRIORITY_CONFIG.Medium;
     const sc = STATUS_CONFIG[t.status]     || STATUS_CONFIG.Open;
     const company = companies.find(c=>c.id===t.company_id);
