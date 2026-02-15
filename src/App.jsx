@@ -106,14 +106,28 @@ let T = THEMES[_initMode];
 const ADMIN_EMAIL = "cevdetayk53@gmail.com";
 const ADMIN_NAME  = "Cevdet Ayk";
 
+// ── EMAİLJS — index.html'de init ediliyor ────────────────────────────────────
+const EMAILJS_SERVICE_ID  = "service_kxmiym9";
+const EMAILJS_TEMPLATE_ID = "template_gjnd4di";
+
 async function sendEmail({ to_email, to_name, subject, body }) {
   try {
     if (window.emailjs) {
       await window.emailjs.send(
-        window.EMAILJS_SERVICE_ID  || "service_1mxqpxn",
-        window.EMAILJS_TEMPLATE_ID || "template_ticket",
-        { to_email, to_name, subject, message: body, from_name: "ConsultFlow" }
+        EMAILJS_SERVICE_ID,
+        EMAILJS_TEMPLATE_ID,
+        {
+          to_email,           // Template: {{to_email}}
+          to_name,            // Template: {{to_name}}  (From Name alanında)
+          name: to_name,      // Template: {{name}}     (içerik alanında)
+          email: to_email,    // Template: {{email}}    (Reply To alanında)
+          subject,            // Template: {{subject}}
+          message: body,      // Template: {{message}}
+          from_name: "ConsultFlow",
+        }
       );
+    } else {
+      console.warn("EmailJS yüklenmedi");
     }
   } catch (err) { console.warn("Email error:", err.message); }
 }
