@@ -832,8 +832,8 @@ const EmailThread = ({ ticket, profile, companies, allUsers = [] }) => {
       {composing ? (
         <div style={{ border:`1px solid ${T.accent}`, borderRadius:12, background:T.bg2, padding:16, marginTop:8 }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
-            <h4 style={{ margin:0, color:T.text, fontSize:14 }}>{replyTo ? "Yanıtla" : "Yeni E-posta"}</h4>
-            <button onClick={()=>setComposing(false)} style={{ background:"none", border:"none", cursor:"pointer", color:T.text3 }}><Icon name="x" size={16}/></button>
+            <h4 style={{ margin:0, color:T.text, fontSize:14 }}>{replyTo ? "↩ Yanıtla" : "✉ Yeni E-posta"}</h4>
+            <button onClick={()=>{ setComposing(false); setReplyTo(null); }} style={{ background:"none", border:"none", cursor:"pointer", color:T.text3 }}><Icon name="x" size={16}/></button>
           </div>
           <EmailAutoInput label="Kime (virgülle ayırın)" value={form.to} onChange={v=>setForm(p=>({...p,to:v}))} placeholder="ornek@firma.com, ornek2@firma.com" allUsers={allUsers}/>
           <EmailAutoInput label="CC" value={form.cc} onChange={v=>setForm(p=>({...p,cc:v}))} placeholder="cc@firma.com (isteğe bağlı)" allUsers={allUsers}/>
@@ -900,13 +900,21 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
       return true;
     })
   const [efors, setEfors]         = useState({});
+  const [ticketLogs, setTicketLogs] = useState({});
   const [showEforForm, setShowEforForm] = useState(false);
-  const [eforForm, setEforForm]   = useState({ date: new Date().toISOString().slice(0,10), hours:"", description:"", company_id:"" });
+  const [eforForm, setEforForm]   = useState({ date: (()=>{ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })(), hours:"", description:"", company_id:"" });
   const [savingEfor, setSavingEfor] = useState(false);
   const empty = { title:"", description:"", company_id: isCustomer ? profile.company_id:"", priority:"Medium", assignees:[], topics:[] };
   const [form, setForm] = useState(empty);
 
-  useEffect(() => { if(sel) loadEfors(sel.no); }, [sel?.id]);
+  useEffect(() => { if(sel) { loadEfors(sel.no); loadLogs(sel.id); } }, [sel?.id]);
+
+  const loadLogs = async (ticketId) => {
+    try {
+      const { data } = await supabase.from("ticket_logs").select("*").eq("ticket_id", ticketId).order("created_at", {ascending:true});
+      if (data) setTicketLogs(p => ({ ...p, [ticketId]: data }));
+    } catch(e) { /* ticket_logs tablosu yoksa sessiz geç */ }
+  };
 
   const loadEfors = async (no) => {
     const { data } = await supabase.from("time_entries").select("*").eq("ticket_no", no).order("date");
@@ -919,10 +927,14 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     if (!companyId) { showToast("Lütfen firma seçin","error"); return; }
     setSaving(true);
     const no = await (async () => {
-      const { data } = await supabase.from("tickets").select("no").order("created_at", {ascending:false}).limit(1);
-      const last = data?.[0]?.no;
-      const lastNum = last ? parseInt(last.replace("TKT-","")) : 995;
-      return "TKT-" + (isNaN(lastNum) ? 1000 : lastNum + 5);
+      const { data } = await supabase.from("tickets").select("no");
+      // Tüm TKT- numaralarından en büyüğünü bul
+      let maxNum = 995;
+      (data||[]).forEach(t => {
+        const n = parseInt((t.no||"").replace("TKT-",""));
+        if (!isNaN(n) && n > maxNum) maxNum = n;
+      });
+      return "TKT-" + (maxNum + 5);
     })();
     const assignees = Array.isArray(form.assignees) ? form.assignees : [];
     const ticketData = { ...form, company_id:companyId, no, status:"Open", assignee: assignees[0]||null, assignees, topics: form.topics||[] };
@@ -933,6 +945,11 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     setShowModal(false); setForm(empty); reloadAll();
     const company = companies.find(c=>c.id===companyId);
     notifyNewTicket({ ticket:{...ticketData,no}, company, createdBy: profile.full_name||profile.email });
+    // Aktivite logu
+    const { data: newTicket } = await supabase.from("tickets").select("id").eq("no", no).single();
+    if (newTicket) {
+      await addTicketLog({ ticket_id: newTicket.id, ticket_no: no, event: "ticket_created", detail: ticketData.title, actor: profile.full_name||profile.email });
+    }
     // Admin'e bildirim (recipient_id = admin profil id)
     const { data: adminProf } = await supabase.from("profiles").select("id").eq("role","admin").limit(1).single();
     if (adminProf) {
@@ -974,6 +991,8 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     await supabase.from("tickets").update({ status, closed_at: status==="Closed" ? new Date().toISOString():null }).eq("id", ticket.id);
     showToast("Durum: " + STATUS_CONFIG[status]?.label);
     setSel(p => p ? {...p, status} : p);
+    // Aktivite logu
+    await addTicketLog({ ticket_id: ticket.id, ticket_no: ticket.no, event: "status_changed", detail: STATUS_CONFIG[status]?.label||status, actor: profile.full_name||profile.email });
     // Sadece bu ticket'a atanmış danışmanlara bildirim
     const assignedNames = Array.isArray(ticket.assignees) ? ticket.assignees : (ticket.assignee ? [ticket.assignee] : []);
     if (assignedNames.length > 0) {
@@ -1002,11 +1021,13 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     showToast("Atama güncellendi!");
     setSel(p => p ? {...p, assignees, assignee: assignees[0]||null} : p);
     reloadAll();
-    // Sadece yeni eklenen danışmanlara bildirim + mail
+    // Sadece yeni eklenen danışmanlara bildirim + mail + log
     const oldAssignees = Array.isArray(ticket.assignees) ? ticket.assignees : [];
     const newOnes = assignees.filter(a => !oldAssignees.includes(a));
+    const removedOnes = oldAssignees.filter(a => !assignees.includes(a));
     const company = companies.find(c=>c.id===ticket.company_id);
     for (const name of newOnes) {
+      await addTicketLog({ ticket_id: ticket.id, ticket_no: ticket.no, event: "consultant_assigned", detail: name, actor: profile.full_name||profile.email });
       const cp = consultants.find(c=>c.name===name);
       if (cp?.id) {
         await createNotification({
@@ -1039,7 +1060,7 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     if (error) { showToast(error.message,"error"); return; }
     showToast("Efor kaydedildi!");
     setShowEforForm(false);
-    setEforForm({ date:new Date().toISOString().slice(0,10), hours:"", description:"", company_id:"" });
+    setEforForm({ date:(()=>{ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })(), hours:"", description:"", company_id:"" });
     loadEfors(sel.no);
   };
 
@@ -1333,6 +1354,49 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
                   <span style={{ fontSize:13, color:T.text, fontWeight:500, maxWidth:140, textAlign:"right" }}>{v}</span>
                 </div>
               ))}
+            </div>
+
+            {/* Aktivite Logu */}
+            <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:16 }}>
+              <h4 style={{ margin:"0 0 14px", fontSize:14, fontWeight:700, color:T.text }}>Aktivite</h4>
+              {(() => {
+                const LOG_CONFIG = {
+                  ticket_created:      { icon:"🎫", color:T.accent2,  label:"Ticket Açıldı" },
+                  consultant_assigned: { icon:"👤", color:T.purple,   label:"Danışman Atandı" },
+                  status_changed:      { icon:"🔄", color:T.teal,     label:"Durum Değişti" },
+                };
+                // Veritabanı logları varsa onları kullan, yoksa ticket verisinden üret
+                const logs = ticketLogs[sel.id];
+                const items = logs && logs.length > 0 ? logs : [
+                  { event:"ticket_created", detail:sel.title, actor:"", created_at: sel.created_at },
+                  ...assignees.map(a => ({ event:"consultant_assigned", detail:a, actor:"", created_at: sel.created_at })),
+                  ...(sel.status !== "Open" ? [{ event:"status_changed", detail: STATUS_CONFIG[sel.status]?.label||sel.status, actor:"", created_at: sel.closed_at||sel.created_at }] : []),
+                ];
+                return (
+                  <div style={{ display:"flex", flexDirection:"column" }}>
+                    {items.map((log, i) => {
+                      const cfg = LOG_CONFIG[log.event] || { icon:"📌", color:T.text3, label:log.event };
+                      const isLast = i === items.length - 1;
+                      return (
+                        <div key={i} style={{ display:"flex", gap:10, paddingBottom: isLast ? 0 : 14 }}>
+                          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", flexShrink:0 }}>
+                            <div style={{ width:30, height:30, borderRadius:"50%", background:`${cfg.color}20`, border:`1px solid ${cfg.color}40`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14 }}>{cfg.icon}</div>
+                            {!isLast && <div style={{ width:1, flex:1, background:T.border, marginTop:3 }}/>}
+                          </div>
+                          <div style={{ paddingTop:4, flex:1 }}>
+                            <div style={{ fontSize:12, fontWeight:700, color:T.text }}>{cfg.label}</div>
+                            {log.detail && <div style={{ fontSize:12, color:cfg.color, fontWeight:600, marginTop:1 }}>{log.detail}</div>}
+                            {log.actor && <div style={{ fontSize:11, color:T.text3, marginTop:1 }}>— {log.actor}</div>}
+                            <div style={{ fontSize:11, color:T.text3, marginTop:2 }}>
+                              {new Date(log.created_at).toLocaleString("tr-TR",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -2071,12 +2135,12 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
   const [projEntries, setProjEntries] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [periodMode, setPeriodMode] = useState("monthly");
-  const [refDate, setRefDate]     = useState(new Date().toISOString().slice(0,10));
+  const [refDate, setRefDate]     = useState(()=>{ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; });
   const [fCons, setFCons]         = useState("all");
   const [fComp, setFComp]         = useState("all");
   const [fBillable, setFBillable] = useState("all"); // all | billable | nonbillable
   const [showAdd, setShowAdd]     = useState(false);
-  const [form, setForm]           = useState({ ticket_no:"", date:new Date().toISOString().slice(0,10), hours:"", description:"", company_id:"" });
+  const [form, setForm]           = useState({ ticket_no:"", date:(()=>{ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })(), hours:"", description:"", company_id:"" });
   const [saving, setSaving]       = useState(false);
 
   const range = getDateRange(periodMode, refDate);
@@ -2132,11 +2196,12 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
   };
 
   const shiftRef = (dir) => {
-    const d = new Date(refDate);
+    const [ry,rm,rd] = refDate.split("-").map(Number);
+    const d = new Date(ry, rm-1, rd);
     if (periodMode === "daily")   d.setDate(d.getDate() + dir);
     if (periodMode === "weekly")  d.setDate(d.getDate() + dir*7);
     if (periodMode === "monthly") d.setMonth(d.getMonth() + dir);
-    setRefDate(d.toISOString().slice(0,10));
+    setRefDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);
   };
 
   const totalH    = entries.reduce((s,e)=>s+parseFloat(e.hours||0),0);
@@ -2206,7 +2271,7 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
           <button onClick={()=>shiftRef(-1)} style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:18, lineHeight:1, padding:"0 4px" }}>‹</button>
           <span style={{ fontSize:13, fontWeight:600, color:T.text, minWidth:160, textAlign:"center" }}>{rangeLabel}</span>
           <button onClick={()=>shiftRef(1)}  style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:18, lineHeight:1, padding:"0 4px" }}>›</button>
-          <button onClick={()=>setRefDate(new Date().toISOString().slice(0,10))} style={{ background:`${T.accent}20`, border:"none", cursor:"pointer", color:T.accent2, fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:6 }}>Bugün</button>
+          <button onClick={()=>setRefDate((()=>{ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })())} style={{ background:`${T.accent}20`, border:"none", cursor:"pointer", color:T.accent2, fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:6 }}>Bugün</button>
         </div>
         {isAdmin && (
           <select value={fCons} onChange={e=>setFCons(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
@@ -2244,11 +2309,15 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
 
       {/* ── GÜNLÜK EFOR GRAFİĞİ ── */}
       {entries.length > 0 && (() => {
+        // UTC sorunu olmadan yerel tarih string'i üret
+        const localDateStr = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+        const [fy,fm,fd] = range.from.split("-").map(Number);
+        const [ty,tm,td] = range.to.split("-").map(Number);
+        const from = new Date(fy, fm-1, fd);
+        const to   = new Date(ty, tm-1, td);
         const days = [];
-        const from = new Date(range.from + "T00:00:00");
-        const to   = new Date(range.to   + "T00:00:00");
         for (let d = new Date(from); d <= to; d.setDate(d.getDate()+1)) {
-          days.push(d.toISOString().slice(0,10));
+          days.push(localDateStr(d));
         }
         const CONS_COLORS = ["#6366F1","#0EA5E9","#10B981","#F59E0B","#EF4444","#A855F7","#EC4899","#14B8A6"];
         const consNames = [...new Set(entries.map(e=>e.consultant))];
@@ -2263,7 +2332,8 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
         if (visibleDays.length === 0) return null;
         const barW  = Math.max(28, Math.min(56, Math.floor(680/visibleDays.length)-6));
         const chartH = 160;
-        const today = new Date().toISOString().slice(0,10);
+        const now = new Date();
+        const today = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
 
         return (
           <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:20, marginBottom:16 }}>
@@ -2426,7 +2496,7 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
   const [showAdd, setShowAdd]   = useState(false);
   const [entryType, setEntryType] = useState("ticket");
   const [form, setForm] = useState({
-    ticket_no: "", project_id: "", date: new Date().toISOString().slice(0,10),
+    ticket_no: "", project_id: "", date: (()=>{ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })(),
     hours: "", description: ""
   });
   const [saving, setSaving]         = useState(false);
@@ -2535,7 +2605,7 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
     setSaving(false);
     showToast("Efor kaydedildi!");
     setShowAdd(false);
-    setForm({ ticket_no:"", project_id:"", date:new Date().toISOString().slice(0,10), hours:"", description:"" });
+    setForm({ ticket_no:"", project_id:"", date:(()=>{ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })(), hours:"", description:"" });
     load();
   };
 
@@ -2555,7 +2625,7 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
   const shiftMonth = (dir) => {
     const [y,m] = month.split("-").map(Number);
     const d = new Date(y, m-1+dir, 1);
-    setMonth(d.toISOString().slice(0,7));
+    setMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
   };
   const monthLabel = new Date(month+"-15").toLocaleDateString("tr-TR",{month:"long",year:"numeric"});
 
@@ -2605,7 +2675,7 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
             const dayEntries = byDay[day];
             const dayH = dayEntries.reduce((s,e)=>s+parseFloat(e.hours||0),0);
             const date = new Date(day+"T00:00:00");
-            const isToday = day === new Date().toISOString().slice(0,10);
+            const isToday = day === (()=>{ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })();
             return (
               <div key={day}>
                 {/* Gün başlığı */}
@@ -2938,7 +3008,7 @@ const InvoicesPage = ({ companies, consultants, tickets }) => {
   const [invoices, setInvoices]       = useState([]);
   const [loading, setLoading]         = useState(true);
   const [periodMode, setPeriodMode]   = useState("monthly");
-  const [refDate, setRefDate]         = useState(new Date().toISOString().slice(0,10));
+  const [refDate, setRefDate]         = useState(()=>{ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; });
   const [fComp, setFComp]             = useState("all");
   const [fPaid, setFPaid]             = useState("all");
   const [showCreate, setShowCreate]   = useState(false);
@@ -3031,11 +3101,11 @@ const InvoicesPage = ({ companies, consultants, tickets }) => {
   };
 
   const shiftRef = (dir) => {
-    const d = new Date(refDate);
+    const [ry,rm,rd] = refDate.split("-").map(Number); const d = new Date(ry, rm-1, rd);
     if (periodMode==="daily")   d.setDate(d.getDate()+dir);
     if (periodMode==="weekly")  d.setDate(d.getDate()+dir*7);
     if (periodMode==="monthly") d.setMonth(d.getMonth()+dir);
-    setRefDate(d.toISOString().slice(0,10));
+    setRefDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);
   };
 
   const addItem  = () => setForm(p=>({...p, items:[...p.items,{description:"",quantity:"1",unit_price:""}]}));
@@ -3155,7 +3225,7 @@ const InvoicesPage = ({ companies, consultants, tickets }) => {
           <button onClick={()=>shiftRef(-1)} style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:18, lineHeight:1, padding:"0 4px" }}>‹</button>
           <span style={{ fontSize:13, fontWeight:600, color:T.text, minWidth:160, textAlign:"center" }}>{rangeLabel}</span>
           <button onClick={()=>shiftRef(1)}  style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:18, lineHeight:1, padding:"0 4px" }}>›</button>
-          <button onClick={()=>setRefDate(new Date().toISOString().slice(0,10))} style={{ background:`${T.accent}20`, border:"none", cursor:"pointer", color:T.accent2, fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:6 }}>Bugün</button>
+          <button onClick={()=>setRefDate((()=>{ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })())} style={{ background:`${T.accent}20`, border:"none", cursor:"pointer", color:T.accent2, fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:6 }}>Bugün</button>
         </div>
         <select value={fComp} onChange={e=>setFComp(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
           <option value="all">Tüm Firmalar</option>
@@ -3353,7 +3423,7 @@ const InvoicesPage = ({ companies, consultants, tickets }) => {
 
 const ReportsPage = ({ tickets, companies, consultants }) => {
   const [periodMode, setPeriodMode] = useState("monthly");
-  const [refDate, setRefDate]       = useState(new Date().toISOString().slice(0,10));
+  const [refDate, setRefDate]       = useState(()=>{ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; });
   const [fComp, setFComp]           = useState("all");
 
   const range = getDateRange(periodMode, refDate);
@@ -3366,11 +3436,11 @@ const ReportsPage = ({ tickets, companies, consultants }) => {
   });
 
   const shiftRef = (dir) => {
-    const d = new Date(refDate);
+    const [ry,rm,rd] = refDate.split("-").map(Number); const d = new Date(ry, rm-1, rd);
     if (periodMode==="daily")   d.setDate(d.getDate()+dir);
     if (periodMode==="weekly")  d.setDate(d.getDate()+dir*7);
     if (periodMode==="monthly") d.setMonth(d.getMonth()+dir);
-    setRefDate(d.toISOString().slice(0,10));
+    setRefDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`);
   };
 
   const rangeLabel = periodMode==="daily" ? new Date(range.from + "T12:00:00").toLocaleDateString("tr-TR")
@@ -3432,7 +3502,7 @@ const ReportsPage = ({ tickets, companies, consultants }) => {
           <button onClick={()=>shiftRef(-1)} style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:18, lineHeight:1, padding:"0 4px" }}>‹</button>
           <span style={{ fontSize:13, fontWeight:600, color:T.text, minWidth:160, textAlign:"center" }}>{rangeLabel}</span>
           <button onClick={()=>shiftRef(1)}  style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:18, lineHeight:1, padding:"0 4px" }}>›</button>
-          <button onClick={()=>setRefDate(new Date().toISOString().slice(0,10))} style={{ background:`${T.accent}20`, border:"none", cursor:"pointer", color:T.accent2, fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:6 }}>Bugün</button>
+          <button onClick={()=>setRefDate((()=>{ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })())} style={{ background:`${T.accent}20`, border:"none", cursor:"pointer", color:T.accent2, fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:6 }}>Bugün</button>
         </div>
         <select value={fComp} onChange={e=>setFComp(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
           <option value="all">Tüm Firmalar</option>
@@ -3967,6 +4037,16 @@ const createNotification = async ({ type, message, detail="", company_id=null, r
   } catch(e) { console.warn("Notif error:", e); }
 };
 
+// Ticket aktivite logu kaydet
+const addTicketLog = async ({ ticket_id, ticket_no, event, detail="", actor="" }) => {
+  try {
+    await supabase.from("ticket_logs").insert([{
+      ticket_id, ticket_no, event, detail, actor,
+      created_at: new Date().toISOString()
+    }]);
+  } catch(e) { console.warn("Ticket log error:", e); }
+};
+
 // ─── PROJECTS PAGE ────────────────────────────────────────────────────────────
 const PROJECT_STATUS_CONFIG = {
   "Planning":    { color:"#F59E0B", bg:"#F59E0B18", label:"Planlama" },
@@ -3991,7 +4071,7 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
   const [search, setSearch]       = useState("");
   const [efors, setEfors]         = useState([]);
   const [showEforForm, setShowEforForm] = useState(false);
-  const [eforForm, setEforForm]   = useState({ date: new Date().toISOString().slice(0,10), hours:"", description:"", company_id:"" });
+  const [eforForm, setEforForm]   = useState({ date: (()=>{ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })(), hours:"", description:"", company_id:"" });
   const [savingEfor, setSavingEfor] = useState(false);
 
   const emptyForm = () => ({
@@ -4032,10 +4112,13 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
     if (!cId) { showToast("Firma seçin","error"); return; }
     setSaving(true);
     const no = await (async () => {
-      const { data } = await supabase.from("projects").select("no").order("created_at", {ascending:false}).limit(1);
-      const last = data?.[0]?.no;
-      const lastNum = last ? parseInt(last.replace("PRJ-","")) : 995;
-      return "PRJ-" + (isNaN(lastNum) ? 1000 : lastNum + 5);
+      const { data } = await supabase.from("projects").select("no");
+      let maxNum = 995;
+      (data||[]).forEach(p => {
+        const n = parseInt((p.no||"").replace("PRJ-",""));
+        if (!isNaN(n) && n > maxNum) maxNum = n;
+      });
+      return "PRJ-" + (maxNum + 5);
     })();
     const { error } = await supabase.from("projects").insert([{ ...form, no, company_id:cId }]);
     setSaving(false);
@@ -4075,7 +4158,7 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
     if (error) { showToast(error.message,"error"); return; }
     showToast("Efor kaydedildi!");
     setShowEforForm(false);
-    setEforForm({ date: new Date().toISOString().slice(0,10), hours:"", description:"", company_id:"" });
+    setEforForm({ date: (()=>{ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })(), hours:"", description:"", company_id:"" });
     loadEfors(sel.id);
   };
 
