@@ -111,17 +111,18 @@ const EMAILJS_SERVICE_ID  = "service_kxmiym9";
 const EMAILJS_TEMPLATE_ID = "template_gjnd4di";
 // Public Key: cUDuGLz428G0wR15d (index.html'de emailjs.init() ile set edilir)
 
-async function sendEmail({ to_email, to_name, subject, body }) {
+async function sendEmail({ to_email, to_name, subject, body, cc = "" }) {
   try {
     if (window.emailjs) {
       const params = {
         to_email,
         to_name,
         from_name:  "ConsultFlow",
-        name:       "ConsultFlow",   // template {{name}} için
-        email:      to_email,        // template {{email}} için
+        name:       "ConsultFlow",
+        email:      to_email,
         subject,
         message:    body,
+        cc_email:   cc,   // template'deki Cc alanı: {{cc_email}}
       };
       await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, params);
     } else {
@@ -130,16 +131,53 @@ async function sendEmail({ to_email, to_name, subject, body }) {
   } catch (err) { console.warn("Email error:", err.message); }
 }
 
+// Birden fazla alıcıya mail gönderir (recipients dizisi + cc dizisi)
+async function sendEmailToAll({ recipients = [], cc = [], subject, body }) {
+  // Tüm alıcılar: kime + cc
+  const allRecipients = [
+    ...recipients.map(r => ({ email: r.email || r, name: r.name || r })),
+    ...cc.map(r => ({ email: r.email || r, name: r.name || r })),
+  ].filter(r => r.email && r.email.includes("@"));
+
+  // Tekrar eden adresleri temizle
+  const seen = new Set();
+  const unique = allRecipients.filter(r => {
+    if (seen.has(r.email)) return false;
+    seen.add(r.email); return true;
+  });
+
+  // Her alıcıya ayrı mail
+  await Promise.all(unique.map(r =>
+    sendEmail({ to_email: r.email, to_name: r.name, subject, body })
+  ));
+}
+
 async function notifyNewTicket({ ticket, company, createdBy }) {
   const pMap = { Critical:"Kritik", High:"Yuksek", Medium:"Orta", Low:"Dusuk" };
-  await sendEmail({
-    to_email: ADMIN_EMAIL, to_name: ADMIN_NAME,
-    subject: "[ConsultFlow] Yeni Ticket: " + ticket.no + " - " + ticket.title,
-    body: "Merhaba " + ADMIN_NAME + ",\n\nYeni talep:\nNo: " + ticket.no +
-      "\nBaslik: " + ticket.title + "\nFirma: " + (company?.name||"-") +
-      "\nOncelik: " + (pMap[ticket.priority]||ticket.priority) +
-      "\nOlusturan: " + createdBy + "\nTarih: " + new Date().toLocaleDateString("tr-TR")
-  });
+  const subject = `[ConsultFlow] Yeni Ticket: ${ticket.no} - ${ticket.title}`;
+  const body = `Yeni talep oluşturuldu:\n\nNo: ${ticket.no}\nBaşlık: ${ticket.title}\nFirma: ${company?.name||"-"}\nÖncelik: ${pMap[ticket.priority]||ticket.priority}\nOluşturan: ${createdBy}\nTarih: ${new Date().toLocaleDateString("tr-TR")}`;
+
+  // Admin her zaman alır
+  const recipients = [{ email: ADMIN_EMAIL, name: ADMIN_NAME }];
+
+  // Ticket'taki Kime (recipients) alanı
+  if (Array.isArray(ticket.recipients)) {
+    ticket.recipients.forEach(r => {
+      const email = typeof r === "string" ? r : r.email;
+      if (email) recipients.push({ email, name: email });
+    });
+  }
+
+  // Ticket'taki CC alanı
+  const cc = [];
+  if (Array.isArray(ticket.cc)) {
+    ticket.cc.forEach(r => {
+      const email = typeof r === "string" ? r : r.email;
+      if (email) cc.push({ email, name: email });
+    });
+  }
+
+  await sendEmailToAll({ recipients, cc, subject, body });
 }
 
 async function notifyAssignment({ ticket, company, consultantEmail, consultantName }) {
@@ -710,11 +748,17 @@ const EmailThread = ({ ticket, profile, companies, allUsers = [] }) => {
     };
     const { error } = await supabase.from("ticket_messages").insert([msgData]);
     if (!error) {
-      // Send actual email via EmailJS
-      const toList = form.to.split(",").map(e=>e.trim()).filter(Boolean);
-      for (const toEmail of toList) {
-        await sendEmail({ to_email: toEmail, to_name: toEmail, subject: form.subject, body: form.body });
-      }
+      // Tek mail — To: tüm alıcılar, CC: cc listesi
+      const toEmails = form.to.split(",").map(e=>e.trim()).filter(Boolean).join(", ");
+      const ccEmails = (form.cc||"").split(",").map(e=>e.trim()).filter(Boolean).join(", ");
+      const firstTo  = form.to.split(",")[0].trim(); // EmailJS primary alıcı
+      await sendEmail({
+        to_email: toEmails,   // To: A, B  (virgülle ayrılmış)
+        to_name:  firstTo,
+        subject:  form.subject,
+        body:     form.body,
+        cc:       ccEmails,   // Cc: C
+      });
       showToast("E-posta gönderildi!");
       setComposing(false);
       setForm({ to:"", cc:"", subject:"", body:"" });
