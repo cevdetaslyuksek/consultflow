@@ -109,6 +109,7 @@ const ADMIN_NAME  = "Cevdet Ayk";
 // ── EMAİLJS — index.html'de init ediliyor ────────────────────────────────────
 const EMAILJS_SERVICE_ID  = "service_kxmiym9";
 const EMAILJS_TEMPLATE_ID = "template_gjnd4di";
+// Public Key: cUDuGLz428G0wR15d (index.html'de emailjs.init() ile set edilir)
 
 async function sendEmail({ to_email, to_name, subject, body }) {
   try {
