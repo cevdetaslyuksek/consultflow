@@ -2315,21 +2315,30 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [showAdd, setShowAdd]   = useState(false);
-  const [entryType, setEntryType] = useState("ticket"); // ticket | project
+  const [entryType, setEntryType] = useState("ticket");
   const [form, setForm] = useState({
     ticket_no: "", project_id: "", date: new Date().toISOString().slice(0,10),
     hours: "", description: ""
   });
-  const [saving, setSaving] = useState(false);
-  const [month, setMonth] = useState(new Date().toISOString().slice(0,7));
+  const [saving, setSaving]         = useState(false);
+  const [month, setMonth]           = useState(new Date().toISOString().slice(0,7));
+  const [ticketSearch, setTicketSearch] = useState("");
+  const [projSearch, setProjSearch]     = useState("");
 
   useEffect(() => { load(); }, [month]);
 
+  const getMonthRange = (m) => {
+    const [y, mo] = m.split("-").map(Number);
+    const from = `${m}-01`;
+    const lastDay = new Date(y, mo, 0).getDate(); // ayın son günü doğru
+    const to = `${m}-${String(lastDay).padStart(2,"0")}`;
+    return { from, to };
+  };
+
   const load = async () => {
     setLoading(true);
-    const from = month + "-01";
-    const to   = month + "-31";
-    const who  = profile.full_name || profile.email;
+    const { from, to } = getMonthRange(month);
+    const who = profile.full_name || profile.email;
 
     // Ticket eforları
     let q = supabase.from("time_entries").select("*").gte("date", from).lte("date", to).order("date", {ascending:false});
@@ -2354,10 +2363,39 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
     setLoading(false);
   };
 
+  const [editEntry, setEditEntry]   = useState(null);
+  const [editForm, setEditForm]     = useState({ hours:"", description:"", date:"" });
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const openEdit = (e) => {
+    if (e._type === "ticket" && e.billed) { showToast("Faturalanmış efor düzenlenemez","error"); return; }
+    setEditEntry(e);
+    setEditForm({ hours: String(e.hours), description: e.description||"", date: e.date });
+  };
+
+  const saveEdit = async () => {
+    if (!editEntry || !editForm.hours) return;
+    setSavingEdit(true);
+    const table = editEntry._type === "project" ? "project_efors" : "time_entries";
+    const { error } = await supabase.from(table).update({
+      hours: parseFloat(editForm.hours),
+      description: editForm.description,
+      date: editForm.date,
+    }).eq("id", editEntry.id);
+    setSavingEdit(false);
+    if (error) { showToast(error.message,"error"); return; }
+    showToast("Efor güncellendi!"); setEditEntry(null); load();
+  };
+
+  const deleteEntry = async (e) => {
+    if (e._type === "ticket" && e.billed) { showToast("Faturalanmış efor silinemez","error"); return; }
+    if (!window.confirm("Bu efor silinsin mi?")) return;
+    const table = e._type === "project" ? "project_efors" : "time_entries";
+    await supabase.from(table).delete().eq("id", e.id);
+    showToast("Efor silindi!"); load();
+  };
+
   const save = async () => {
-    if (!form.hours) return;
-    if (entryType === "ticket" && !form.ticket_no) { showToast("Ticket seçin","error"); return; }
-    if (entryType === "project" && !form.project_id) { showToast("Proje seçin","error"); return; }
     setSaving(true);
     const who = profile.full_name || profile.email;
 
@@ -2493,6 +2531,7 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
                     const label = isProj ? (e.projects?.no ? `${e.projects.no} — ${e.projects.name||""}` : e.projects?.name||"Proje") : e.ticket_no;
                     const statusLabel = isProj ? (billable?"Faturalanabilir":"Faturalanmaz") : (e.billed?"Faturalandı":"Bekliyor");
                     const statusColor = isProj ? (billable?T.teal:T.text3) : (e.billed?T.success:T.warning);
+                    const canEdit = !(e._type==="ticket" && e.billed); // faturalanmış ticket efor düzenlenemez
                     return (
                       <div key={e.id||i} style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"12px 16px", display:"flex", alignItems:"center", gap:12, borderLeft:`3px solid ${color}` }}>
                         <div style={{ width:36, height:36, borderRadius:8, background:color+"20", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
@@ -2504,6 +2543,16 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
                         </div>
                         <Badge color={statusColor} bg={statusColor+"18"}>{statusLabel}</Badge>
                         <div style={{ fontSize:18, fontWeight:800, color:T.accent2, flexShrink:0 }}>{e.hours}h</div>
+                        {canEdit && (
+                          <div style={{ display:"flex", gap:4, flexShrink:0 }}>
+                            <button onClick={()=>openEdit(e)} title="Düzenle" style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:7, padding:"5px 8px", cursor:"pointer", color:T.text3, fontSize:11, display:"flex", alignItems:"center" }}>
+                              ✏️
+                            </button>
+                            <button onClick={()=>deleteEntry(e)} title="Sil" style={{ background:"#EF444415", border:"1px solid #EF444430", borderRadius:7, padding:"5px 8px", cursor:"pointer", color:"#EF4444", fontSize:11, display:"flex", alignItems:"center" }}>
+                              🗑
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -2516,7 +2565,7 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
 
       {/* Efor Ekle Modal */}
       {showAdd && (
-        <Modal title="Efor Ekle" onClose={()=>setShowAdd(false)} width={480}>
+        <Modal title="Efor Ekle" onClose={()=>{ setShowAdd(false); setTicketSearch(""); setProjSearch(""); }} width={480}>
           {/* Tür seçimi */}
           <div style={{ display:"flex", gap:8, marginBottom:16, background:T.bg3, borderRadius:10, padding:4 }}>
             {[["ticket","🎫 Ticket'a Efor"],["project","📁 Projeye Efor"]].map(([val,lbl])=>(
@@ -2527,19 +2576,101 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
           </div>
 
           {entryType === "ticket" ? (
-            <Sel label="Ticket *" value={form.ticket_no} onChange={e=>setForm(p=>({...p,ticket_no:e.target.value}))}>
-              <option value="">Ticket seçin...</option>
-              {tickets?.map(t=><option key={t.id} value={t.no}>{t.no} — {t.title}</option>)}
-            </Sel>
+            <div style={{ marginBottom:12 }}>
+              <label style={{ display:"block", fontSize:13, fontWeight:600, color:T.text2, marginBottom:6 }}>Ticket *</label>
+              <div style={{ position:"relative" }}>
+                <div style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", pointerEvents:"none" }}>
+                  <Icon name="search" size={14} color={T.text3}/>
+                </div>
+                <input
+                  value={ticketSearch}
+                  onChange={e=>{ setTicketSearch(e.target.value); setForm(p=>({...p,ticket_no:""})); }}
+                  placeholder="Ticket no veya başlık ara..."
+                  style={{ width:"100%", background:T.bg, border:`1px solid ${form.ticket_no ? T.success : T.border}`, borderRadius:8, padding:"9px 10px 9px 32px", color:T.text, fontSize:13, outline:"none", boxSizing:"border-box" }}
+                />
+              </div>
+              {/* Seçili ticket göster */}
+              {form.ticket_no && (
+                <div style={{ marginTop:6, padding:"7px 10px", borderRadius:7, background:T.success+"15", border:`1px solid ${T.success}40`, fontSize:12, color:T.success, fontWeight:600, display:"flex", justifyContent:"space-between" }}>
+                  <span>✓ {form.ticket_no} — {tickets?.find(t=>t.no===form.ticket_no)?.title||""}</span>
+                  <button onClick={()=>{ setForm(p=>({...p,ticket_no:""})); setTicketSearch(""); }} style={{ background:"none", border:"none", cursor:"pointer", color:T.text3, fontSize:14, lineHeight:1 }}>×</button>
+                </div>
+              )}
+              {/* Arama sonuçları */}
+              {!form.ticket_no && ticketSearch.length > 0 && (()=>{
+                const filtered = (tickets||[]).filter(t=>
+                  t.no?.toLowerCase().includes(ticketSearch.toLowerCase()) ||
+                  t.title?.toLowerCase().includes(ticketSearch.toLowerCase())
+                ).slice(0,8);
+                return filtered.length > 0 ? (
+                  <div style={{ position:"relative", zIndex:100 }}>
+                    <div style={{ background:T.bg2, border:`1px solid ${T.border}`, borderRadius:8, marginTop:4, overflow:"hidden", boxShadow:"0 8px 24px rgba(0,0,0,0.3)" }}>
+                      {filtered.map(t=>(
+                        <button key={t.id} onClick={()=>{ setForm(p=>({...p,ticket_no:t.no})); setTicketSearch(t.no + " — " + t.title); }}
+                          style={{ width:"100%", padding:"9px 12px", border:"none", borderBottom:`1px solid ${T.border}`, background:"transparent", cursor:"pointer", textAlign:"left", color:T.text, fontSize:13, display:"flex", gap:8, alignItems:"center" }}
+                          onMouseEnter={e=>e.currentTarget.style.background=T.bg3}
+                          onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+                        >
+                          <span style={{ fontSize:11, fontWeight:700, color:T.accent2, fontFamily:"monospace", flexShrink:0 }}>{t.no}</span>
+                          <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color:T.text2 }}>{t.title}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ marginTop:4, padding:"8px 12px", fontSize:12, color:T.text3, background:T.bg2, borderRadius:8, border:`1px solid ${T.border}` }}>Sonuç bulunamadı</div>
+                );
+              })()}
+            </div>
           ) : (
-            <Sel label="Proje *" value={form.project_id} onChange={e=>setForm(p=>({...p,project_id:e.target.value}))}>
-              <option value="">Proje seçin...</option>
-              {projects.map(p=>(
-                <option key={p.id} value={p.id}>
-                  {p.no} — {p.name} {p.billable===false?"(Faturalanmaz)":""}
-                </option>
-              ))}
-            </Sel>
+            <div style={{ marginBottom:12 }}>
+              <label style={{ display:"block", fontSize:13, fontWeight:600, color:T.text2, marginBottom:6 }}>Proje *</label>
+              <div style={{ position:"relative" }}>
+                <div style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", pointerEvents:"none" }}>
+                  <Icon name="search" size={14} color={T.text3}/>
+                </div>
+                <input
+                  value={projSearch}
+                  onChange={e=>{ setProjSearch(e.target.value); setForm(p=>({...p,project_id:""})); }}
+                  placeholder="Proje no veya adı ara..."
+                  style={{ width:"100%", background:T.bg, border:`1px solid ${form.project_id ? T.success : T.border}`, borderRadius:8, padding:"9px 10px 9px 32px", color:T.text, fontSize:13, outline:"none", boxSizing:"border-box" }}
+                />
+              </div>
+              {form.project_id && (()=>{
+                const proj = projects.find(p=>p.id===form.project_id);
+                return (
+                  <div style={{ marginTop:6, padding:"7px 10px", borderRadius:7, background:T.success+"15", border:`1px solid ${T.success}40`, fontSize:12, color:T.success, fontWeight:600, display:"flex", justifyContent:"space-between" }}>
+                    <span>✓ {proj?.no} — {proj?.name} {proj?.billable===false?"(Faturalanmaz)":""}</span>
+                    <button onClick={()=>{ setForm(p=>({...p,project_id:""})); setProjSearch(""); }} style={{ background:"none", border:"none", cursor:"pointer", color:T.text3, fontSize:14, lineHeight:1 }}>×</button>
+                  </div>
+                );
+              })()}
+              {!form.project_id && projSearch.length > 0 && (()=>{
+                const filtered = projects.filter(p=>
+                  p.no?.toLowerCase().includes(projSearch.toLowerCase()) ||
+                  p.name?.toLowerCase().includes(projSearch.toLowerCase())
+                ).slice(0,8);
+                return filtered.length > 0 ? (
+                  <div style={{ position:"relative", zIndex:100 }}>
+                    <div style={{ background:T.bg2, border:`1px solid ${T.border}`, borderRadius:8, marginTop:4, overflow:"hidden", boxShadow:"0 8px 24px rgba(0,0,0,0.3)" }}>
+                      {filtered.map(p=>(
+                        <button key={p.id} onClick={()=>{ setForm(f=>({...f,project_id:p.id})); setProjSearch(p.no+" — "+p.name); }}
+                          style={{ width:"100%", padding:"9px 12px", border:"none", borderBottom:`1px solid ${T.border}`, background:"transparent", cursor:"pointer", textAlign:"left", fontSize:13, display:"flex", gap:8, alignItems:"center" }}
+                          onMouseEnter={e=>e.currentTarget.style.background=T.bg3}
+                          onMouseLeave={e=>e.currentTarget.style.background="transparent"}
+                        >
+                          <span style={{ fontSize:11, fontWeight:700, color:T.teal, fontFamily:"monospace", flexShrink:0 }}>{p.no}</span>
+                          <span style={{ flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", color:T.text2 }}>{p.name}</span>
+                          {p.billable===false && <span style={{ fontSize:10, color:T.warning, background:T.warning+"20", padding:"1px 6px", borderRadius:10, flexShrink:0 }}>Faturalanmaz</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ marginTop:4, padding:"8px 12px", fontSize:12, color:T.text3, background:T.bg2, borderRadius:8, border:`1px solid ${T.border}` }}>Sonuç bulunamadı</div>
+                );
+              })()}
+            </div>
           )}
 
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
@@ -2564,11 +2695,27 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
           </div>
         </Modal>
       )}
+      {/* Efor Düzenle Modal */}
+      {editEntry && (
+        <Modal title="Efor Düzenle" onClose={()=>setEditEntry(null)} width={400}>
+          <div style={{ padding:"10px 12px", borderRadius:8, background:T.bg3, border:`1px solid ${T.border}`, marginBottom:14, fontSize:13, color:T.text2 }}>
+            <strong style={{ color:T.text }}>{editEntry._type==="ticket" ? editEntry.ticket_no : editEntry.projects?.name}</strong>
+            <span style={{ marginLeft:8, fontSize:11, color:T.text3 }}>{editEntry._type==="ticket"?"Ticket":"Proje"}</span>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+            <Inp label="Tarih" type="date" value={editForm.date} onChange={e=>setEditForm(p=>({...p,date:e.target.value}))}/>
+            <Inp label="Saat" type="number" step="0.5" min="0.5" max="24" value={editForm.hours} onChange={e=>setEditForm(p=>({...p,hours:e.target.value}))} placeholder="2.5"/>
+          </div>
+          <Textarea label="Açıklama" value={editForm.description} onChange={e=>setEditForm(p=>({...p,description:e.target.value}))} rows={3} placeholder="Yapılan iş..."/>
+          <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:8 }}>
+            <Btn variant="ghost" onClick={()=>setEditEntry(null)}>İptal</Btn>
+            <Btn onClick={saveEdit} disabled={savingEdit}>{savingEdit?"Kaydediliyor...":"Güncelle"}</Btn>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
-
-// ─── INVOICE PREVIEW MODAL ───────────────────────────────────────────────────
 const InvoicePreview = ({ invoice, company, onClose, onExport }) => {
   const items = Array.isArray(invoice.items) ? invoice.items : [];
   const subtotal = items.reduce((s,i)=>s+(parseFloat(i.quantity||0)*parseFloat(i.unit_price||0)),0);
