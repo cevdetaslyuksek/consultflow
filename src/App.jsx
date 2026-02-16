@@ -1,4 +1,4 @@
-// ConsultFlow v5.5 - Full Featured cevdet ayk
+// ConsultFlow v5.5 - Full Featured
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -362,7 +362,7 @@ const MobileNav = ({ page, setPage, profile, onLogout, unreadCount, themeT }) =>
   const mainNav = [
     { id:"dashboard", label:"Ana Sayfa", icon:"dashboard" },
     { id:"tickets",   label:"Talepler",  icon:"tickets" },
-    { id:"projects",  label:"Projeler",  icon:"folder" },
+    { id:"zaman",     label:"Çizelge",   icon:"timesheet" },
     { id:"notifications", label:"Bildirim", icon:"bell", badge: unreadCount },
   ];
 
@@ -456,7 +456,8 @@ const Sidebar = ({ page, setPage, profile, onLogout, unreadCount = 0 }) => {
     ...(!isAdmin && !isCons ? [] : [{ id:"companies",  label:"Firmalar",     icon:"companies" }]),
     { id:"tickets",   label:"Talepler",     icon:"tickets" },
     { id:"projects",  label:"Projeler",     icon:"folder" },
-    ...(!isAdmin && !isCons ? [] : [{ id:"timesheet",  label:"Efor Takip",   icon:"timesheet" }]),
+    ...(!isAdmin && !isCons ? [] : [{ id:"zaman",      label:"Zaman Çizelgesi", icon:"timesheet" }]),
+    ...(!isAdmin && !isCons ? [] : [{ id:"timesheet",  label:"Efor Takip",   icon:"activity" }]),
     ...(!isAdmin ? [] : [{ id:"invoices",   label:"Faturalar",    icon:"invoice" }]),
     ...(!isAdmin ? [] : [{ id:"reports",    label:"Raporlar",     icon:"reports" }]),
     ...(!isAdmin ? [] : [{ id:"users",      label:"Kullanıcılar",      icon:"userplus" }]),
@@ -1956,15 +1957,17 @@ const getDateRange = (mode, ref) => {
 const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
   const isAdmin = profile?.role === "admin";
   const isCons  = profile?.role === "consultant";
-  const [entries, setEntries] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [periodMode, setPeriodMode] = useState("monthly"); // daily | weekly | monthly
-  const [refDate, setRefDate]   = useState(new Date().toISOString().slice(0,10));
-  const [fCons, setFCons]       = useState("all");
-  const [fComp, setFComp]       = useState("all");
-  const [showAdd, setShowAdd]   = useState(false);
-  const [form, setForm]         = useState({ ticket_no:"", date:new Date().toISOString().slice(0,10), hours:"", description:"", company_id:"" });
-  const [saving, setSaving]     = useState(false);
+  const [entries, setEntries]     = useState([]);
+  const [projEntries, setProjEntries] = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [periodMode, setPeriodMode] = useState("monthly");
+  const [refDate, setRefDate]     = useState(new Date().toISOString().slice(0,10));
+  const [fCons, setFCons]         = useState("all");
+  const [fComp, setFComp]         = useState("all");
+  const [fBillable, setFBillable] = useState("all"); // all | billable | nonbillable
+  const [showAdd, setShowAdd]     = useState(false);
+  const [form, setForm]           = useState({ ticket_no:"", date:new Date().toISOString().slice(0,10), hours:"", description:"", company_id:"" });
+  const [saving, setSaving]       = useState(false);
 
   const range = getDateRange(periodMode, refDate);
 
@@ -1973,6 +1976,8 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
   const load = async () => {
     setLoading(true);
     const r = getDateRange(periodMode, refDate);
+
+    // Ticket eforları
     let q = supabase.from("time_entries").select("*").gte("date", r.from).lte("date", r.to).order("date",{ascending:false});
     if (!isAdmin && isCons) q = q.eq("consultant", profile.full_name||profile.email);
     const { data } = await q;
@@ -1980,6 +1985,16 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
     if (fCons !== "all") filtered = filtered.filter(e=>e.consultant===fCons);
     if (fComp !== "all") filtered = filtered.filter(e=>e.company_id===fComp);
     setEntries(filtered);
+
+    // Proje eforları
+    let pq = supabase.from("project_efors").select("*, projects(name, no, billable, company_id)").gte("date", r.from).lte("date", r.to).order("date",{ascending:false});
+    if (!isAdmin && isCons) pq = pq.eq("consultant", profile.full_name||profile.email);
+    const { data: pd } = await pq;
+    let pFiltered = pd || [];
+    if (fCons !== "all") pFiltered = pFiltered.filter(e=>e.consultant===fCons);
+    if (fComp !== "all") pFiltered = pFiltered.filter(e=>e.projects?.company_id===fComp);
+    setProjEntries(pFiltered);
+
     setLoading(false);
   };
 
@@ -2017,16 +2032,32 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
   const totalH    = entries.reduce((s,e)=>s+parseFloat(e.hours||0),0);
   const billedH   = entries.filter(e=>e.billed).reduce((s,e)=>s+parseFloat(e.hours||0),0);
   const pendingH  = totalH - billedH;
+  const projH     = projEntries.reduce((s,e)=>s+parseFloat(e.hours||0),0);
+  const projBillableH    = projEntries.filter(e=>e.projects?.billable !== false).reduce((s,e)=>s+parseFloat(e.hours||0),0);
+  const projNonBillableH = projEntries.filter(e=>e.projects?.billable === false).reduce((s,e)=>s+parseFloat(e.hours||0),0);
+
+  // Birleşik filtreli liste
+  const allEntries = [
+    ...( fBillable === "nonbillable" ? [] : entries.map(e=>({...e, _type:"ticket"})) ),
+    ...( fBillable === "billable"
+      ? projEntries.filter(e=>e.projects?.billable !== false).map(e=>({...e, _type:"project", _billable: true}))
+      : fBillable === "nonbillable"
+      ? projEntries.filter(e=>e.projects?.billable === false).map(e=>({...e, _type:"project", _billable: false}))
+      : projEntries.map(e=>({...e, _type:"project", _billable: e.projects?.billable !== false}))
+    ),
+  ].sort((a,b)=> new Date(b.date)-new Date(a.date));
 
   const doExport = () => {
-    const rows = entries.map(e => ({
+    const rows = allEntries.map(e => ({
       "Tarih":      e.date,
-      "Ticket No":  e.ticket_no,
+      "Tür":        e._type === "ticket" ? "Ticket" : "Proje",
+      "No":         e._type === "ticket" ? (e.ticket_no||"—") : (e.projects?.no||"—"),
+      "İsim":       e._type === "ticket" ? (e.ticket_no||"—") : (e.projects?.name||"—"),
       "Danışman":   e.consultant,
-      "Firma":      companies.find(c=>c.id===e.company_id)?.name||"—",
+      "Firma":      companies.find(c=>c.id===(e.company_id||e.projects?.company_id))?.name||"—",
       "Saat":       e.hours,
       "Açıklama":   e.description||"",
-      "Durum":      e.billed ? "Faturalandı" : "Bekliyor",
+      "Durum":      e._type === "ticket" ? (e.billed ? "Faturalandı" : "Bekliyor") : (e._billable ? "Faturalanabilir" : "Faturalanmaz"),
     }));
     const label = periodMode==="daily" ? range.from : periodMode==="weekly" ? `${range.from}_${range.to}` : refDate.slice(0,7);
     exportToCSV(rows, `efor_${label}`);
@@ -2041,7 +2072,7 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
     <div>
       <PageHeader
         title="Efor Takip"
-        subtitle={`${entries.length} kayıt — ${totalH}h toplam`}
+        subtitle={`${allEntries.length} kayıt — ${(totalH+projH).toFixed(1)}h toplam`}
         action={
           <div style={{ display:"flex", gap:8 }}>
             <Btn variant="success" size="sm" onClick={doExport}><Icon name="download" size={14}/> Excel'e Aktar</Btn>
@@ -2077,17 +2108,24 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
           <option value="all">Tüm Firmalar</option>
           {companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
+        {/* Faturalanabilirlik filtresi */}
+        <select value={fBillable} onChange={e=>setFBillable(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
+          <option value="all">Tümü (Ticket + Proje)</option>
+          <option value="billable">💰 Faturalanabilir</option>
+          <option value="nonbillable">🏢 Faturalanmaz (Şirket İçi)</option>
+        </select>
       </div>
 
       {/* Summary cards */}
-      <div style={{ display:"flex", gap:12, marginBottom:20 }}>
+      <div style={{ display:"flex", gap:12, marginBottom:20, flexWrap:"wrap" }}>
         {[
-          { label:"Toplam Efor", value:`${totalH}h`, color:T.accent2 },
-          { label:"Faturalandı", value:`${billedH}h`, color:T.success },
-          { label:"Bekliyor",    value:`${pendingH.toFixed(1)}h`, color:T.warning },
-          { label:"Kayıt Sayısı", value:entries.length, color:T.teal },
+          { label:"Ticket Efor",         value:`${totalH}h`,                  color:T.accent2 },
+          { label:"Faturalandı",          value:`${billedH}h`,                 color:T.success },
+          { label:"Bekliyor",             value:`${pendingH.toFixed(1)}h`,     color:T.warning },
+          { label:"Proje Efor",           value:`${projH.toFixed(1)}h`,        color:T.teal },
+          { label:"Proje (Faturalanmaz)", value:`${projNonBillableH.toFixed(1)}h`, color:T.text3 },
         ].map(s => (
-          <div key={s.label} style={{ flex:1, background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"14px 16px" }}>
+          <div key={s.label} style={{ flex:1, minWidth:120, background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"14px 16px" }}>
             <div style={{ fontSize:22, fontWeight:800, color:s.color }}>{s.value}</div>
             <div style={{ fontSize:12, color:T.text3, marginTop:3 }}>{s.label}</div>
           </div>
@@ -2206,37 +2244,51 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
       })()}
 
       <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, overflow:"hidden" }}>
-        <div style={{ padding:"12px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"110px 1fr 130px 120px 70px 110px", gap:12, fontSize:12, fontWeight:700, color:T.text3 }}>
-          <span>Tarih</span><span>Ticket / Açıklama</span><span>Danışman</span><span>Firma</span><span>Saat</span><span>Durum</span>
+        <div style={{ padding:"12px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"100px 80px 1fr 120px 60px 110px", gap:10, fontSize:12, fontWeight:700, color:T.text3 }}>
+          <span>Tarih</span><span>Tür</span><span>No / Açıklama</span><span>Danışman</span><span>Saat</span><span>Durum</span>
         </div>
         {loading ? <div style={{ textAlign:"center", padding:40, color:T.text3 }}>Yükleniyor...</div>
-        : entries.map(e => {
-          const co = companies.find(c=>c.id===e.company_id);
-          return (
-            <div key={e.id} style={{ padding:"11px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"110px 1fr 130px 120px 70px 110px", gap:12, alignItems:"center" }}>
-              <span style={{ fontSize:13, color:T.text3 }}>{new Date(e.date+"T00:00:00").toLocaleDateString("tr-TR")}</span>
-              <div>
-                <div style={{ fontSize:13, fontWeight:600, color:T.text }}>{e.ticket_no}</div>
-                <div style={{ fontSize:12, color:T.text3 }}>{e.description}</div>
+        : allEntries.length === 0
+          ? <div style={{ textAlign:"center", padding:40, color:T.text3 }}>Bu dönemde kayıt yok</div>
+          : allEntries.map((e,i) => {
+            const isProj = e._type === "project";
+            const isBillable = isProj ? e._billable : true;
+            const co = companies.find(c=>c.id===(isProj ? e.projects?.company_id : e.company_id));
+            return (
+              <div key={e.id||i} style={{ padding:"11px 16px", borderBottom:`1px solid ${T.border}`, display:"grid", gridTemplateColumns:"100px 80px 1fr 120px 60px 110px", gap:10, alignItems:"center", background: isProj && !isBillable ? T.bg3+"80" : "transparent" }}>
+                <span style={{ fontSize:12, color:T.text3 }}>{new Date(e.date+"T00:00:00").toLocaleDateString("tr-TR")}</span>
+                <div>
+                  {isProj
+                    ? <Badge color={isBillable?T.teal:T.text3} bg={(isBillable?T.teal:T.text3)+"18"}>{isBillable?"Proje":"Şirket İçi"}</Badge>
+                    : <Badge color={T.accent} bg={T.accent+"18"}>Ticket</Badge>
+                  }
+                </div>
+                <div>
+                  <div style={{ fontSize:13, fontWeight:600, color:T.text }}>
+                    {isProj ? `${e.projects?.no||""} ${e.projects?.name||""}` : e.ticket_no}
+                  </div>
+                  <div style={{ fontSize:11, color:T.text3 }}>{e.description}</div>
+                </div>
+                <span style={{ fontSize:12, color:T.text2 }}>{e.consultant}</span>
+                <span style={{ fontSize:14, fontWeight:800, color:T.accent2 }}>{e.hours}h</span>
+                {isProj
+                  ? <Badge color={isBillable?T.teal:T.text3} bg={(isBillable?T.teal:T.text3)+"18"}>{isBillable?"Faturalanabilir":"Faturalanmaz"}</Badge>
+                  : <Badge color={e.billed?T.success:T.warning} bg={(e.billed?T.success:T.warning)+"20"}>{e.billed?"Faturalandı":"Bekliyor"}</Badge>
+                }
               </div>
-              <span style={{ fontSize:13, color:T.text2 }}>{e.consultant}</span>
-              <span style={{ fontSize:13, color:T.teal }}>{co?.name||"—"}</span>
-              <span style={{ fontSize:14, fontWeight:800, color:T.accent2 }}>{e.hours}h</span>
-              <Badge color={e.billed?T.success:T.warning} bg={(e.billed?T.success:T.warning)+"20"}>{e.billed?"Faturalandı":"Bekliyor"}</Badge>
-            </div>
-          );
-        })}
-        {!loading && entries.length===0 && <div style={{ textAlign:"center", padding:40, color:T.text3 }}>Bu dönemde kayıt yok</div>}
+            );
+          })
+        }
       </div>
 
       {showAdd && (
         <Modal title="Efor Ekle" onClose={()=>setShowAdd(false)}>
           <Sel label="Ticket No" value={form.ticket_no} onChange={e=>setForm(p=>({...p,ticket_no:e.target.value}))}>
             <option value="">Ticket seçin</option>
-            {tickets.map(t=><option key={t.id} value={t.no}>{t.no} - {t.title}</option>)}
+            {tickets.map(t=><option key={t.id} value={t.no}>{t.no} — {t.title}</option>)}
           </Sel>
           <Sel label="Firma" value={form.company_id} onChange={e=>setForm(p=>({...p,company_id:e.target.value}))}>
-            <option value="">Firma seçin (isteğe bağlı)</option>
+            <option value="">Firma (isteğe bağlı)</option>
             {companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
           </Sel>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
@@ -2247,6 +2299,267 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
           <div style={{ display:"flex", gap:8, justifyContent:"flex-end" }}>
             <Btn variant="ghost" onClick={()=>setShowAdd(false)}>İptal</Btn>
             <Btn onClick={save} disabled={saving}>{saving?"Kaydediliyor...":"Ekle"}</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+};
+
+// ─── ZAMAN ÇİZELGESİ ─────────────────────────────────────────────────────────
+const ZamanCizelgesi = ({ profile, companies, tickets }) => {
+  const isAdmin = profile?.role === "admin";
+  const isCons  = profile?.role === "consultant";
+  const [entries, setEntries]   = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [showAdd, setShowAdd]   = useState(false);
+  const [entryType, setEntryType] = useState("ticket"); // ticket | project
+  const [form, setForm] = useState({
+    ticket_no: "", project_id: "", date: new Date().toISOString().slice(0,10),
+    hours: "", description: ""
+  });
+  const [saving, setSaving] = useState(false);
+  const [month, setMonth] = useState(new Date().toISOString().slice(0,7));
+
+  useEffect(() => { load(); }, [month]);
+
+  const load = async () => {
+    setLoading(true);
+    const from = month + "-01";
+    const to   = month + "-31";
+    const who  = profile.full_name || profile.email;
+
+    // Ticket eforları
+    let q = supabase.from("time_entries").select("*").gte("date", from).lte("date", to).order("date", {ascending:false});
+    if (!isAdmin) q = q.eq("consultant", who);
+    const { data: td } = await q;
+
+    // Proje eforları
+    let pq = supabase.from("project_efors").select("*, projects(id, name, no, billable, company_id)").gte("date", from).lte("date", to).order("date", {ascending:false});
+    if (!isAdmin) pq = pq.eq("consultant", who);
+    const { data: pd } = await pq;
+
+    // Tüm projeler (form için)
+    const { data: prjs } = await supabase.from("projects").select("id,name,no,billable,company_id,status").neq("status","Cancelled");
+    setProjects(prjs || []);
+
+    // Birleştir
+    const all = [
+      ...(td||[]).map(e=>({...e, _type:"ticket"})),
+      ...(pd||[]).map(e=>({...e, _type:"project"})),
+    ].sort((a,b)=>new Date(b.date)-new Date(a.date));
+    setEntries(all);
+    setLoading(false);
+  };
+
+  const save = async () => {
+    if (!form.hours) return;
+    if (entryType === "ticket" && !form.ticket_no) { showToast("Ticket seçin","error"); return; }
+    if (entryType === "project" && !form.project_id) { showToast("Proje seçin","error"); return; }
+    setSaving(true);
+    const who = profile.full_name || profile.email;
+
+    if (entryType === "ticket") {
+      const ticket = tickets?.find(t=>t.no===form.ticket_no);
+      const { error } = await supabase.from("time_entries").insert([{
+        ticket_no: form.ticket_no,
+        consultant: who,
+        date: form.date,
+        hours: parseFloat(form.hours),
+        description: form.description,
+        company_id: ticket?.company_id || null,
+        billed: false,
+      }]);
+      if (error) { showToast(error.message,"error"); setSaving(false); return; }
+      await createNotification({
+        type: "efor_added",
+        message: `[${form.ticket_no}] ${ticket?.title||form.ticket_no} — ${form.hours}h efor eklendi`,
+        detail: `${who}: ${form.description||""}`,
+        company_id: ticket?.company_id||null, ref_id: ticket?.id||null, ref_type:"ticket"
+      });
+    } else {
+      const proj = projects.find(p=>p.id===form.project_id);
+      const { error } = await supabase.from("project_efors").insert([{
+        project_id: form.project_id,
+        consultant: who,
+        date: form.date,
+        hours: parseFloat(form.hours),
+        description: form.description,
+        company_id: proj?.company_id || null,
+      }]);
+      if (error) { showToast(error.message,"error"); setSaving(false); return; }
+      await createNotification({
+        type: "efor_added",
+        message: `${who} — ${proj?.name||""} projesine ${form.hours}h efor ekledi`,
+        company_id: proj?.company_id||null
+      });
+    }
+    setSaving(false);
+    showToast("Efor kaydedildi!");
+    setShowAdd(false);
+    setForm({ ticket_no:"", project_id:"", date:new Date().toISOString().slice(0,10), hours:"", description:"" });
+    load();
+  };
+
+  // Ayı gün gün grupla
+  const byDay = {};
+  entries.forEach(e => {
+    const d = e.date?.slice(0,10);
+    if (!byDay[d]) byDay[d] = [];
+    byDay[d].push(e);
+  });
+  const days = Object.keys(byDay).sort((a,b)=>b.localeCompare(a));
+
+  const totalH     = entries.reduce((s,e)=>s+parseFloat(e.hours||0),0);
+  const ticketH    = entries.filter(e=>e._type==="ticket").reduce((s,e)=>s+parseFloat(e.hours||0),0);
+  const projH      = entries.filter(e=>e._type==="project").reduce((s,e)=>s+parseFloat(e.hours||0),0);
+
+  const shiftMonth = (dir) => {
+    const [y,m] = month.split("-").map(Number);
+    const d = new Date(y, m-1+dir, 1);
+    setMonth(d.toISOString().slice(0,7));
+  };
+  const monthLabel = new Date(month+"-15").toLocaleDateString("tr-TR",{month:"long",year:"numeric"});
+
+  return (
+    <div>
+      <PageHeader
+        title="Zaman Çizelgesi"
+        subtitle={`${totalH.toFixed(1)}h — ${entries.length} kayıt`}
+        action={<Btn onClick={()=>setShowAdd(true)}><Icon name="plus" size={15}/> Efor Ekle</Btn>}
+      />
+
+      {/* Ay navigasyon */}
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8, background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"6px 14px" }}>
+          <button onClick={()=>shiftMonth(-1)} style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:20, lineHeight:1 }}>‹</button>
+          <span style={{ fontSize:14, fontWeight:700, color:T.text, minWidth:160, textAlign:"center" }}>{monthLabel}</span>
+          <button onClick={()=>shiftMonth(1)}  style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:20, lineHeight:1 }}>›</button>
+          <button onClick={()=>setMonth(new Date().toISOString().slice(0,7))} style={{ background:`${T.accent}20`, border:"none", cursor:"pointer", color:T.accent2, fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:6 }}>Bu Ay</button>
+        </div>
+        {/* Özet istatistikler */}
+        <div style={{ display:"flex", gap:8, flex:1 }}>
+          {[
+            { label:"Toplam", value:`${totalH.toFixed(1)}h`, color:T.accent2 },
+            { label:"Ticket", value:`${ticketH.toFixed(1)}h`, color:T.accent },
+            { label:"Proje",  value:`${projH.toFixed(1)}h`,  color:T.teal },
+          ].map(s=>(
+            <div key={s.label} style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:10, padding:"8px 14px", minWidth:80 }}>
+              <div style={{ fontSize:18, fontWeight:800, color:s.color }}>{s.value}</div>
+              <div style={{ fontSize:11, color:T.text3 }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Timeline */}
+      {loading ? (
+        <div style={{ textAlign:"center", padding:60, color:T.text3 }}>Yükleniyor...</div>
+      ) : days.length === 0 ? (
+        <div style={{ textAlign:"center", padding:60, color:T.text3 }}>
+          <Icon name="timesheet" size={48} color={T.text3}/>
+          <p style={{ marginTop:12, fontSize:14 }}>Bu ay henüz efor girilmemiş</p>
+          <Btn onClick={()=>setShowAdd(true)} style={{ marginTop:12 }}>Efor Ekle</Btn>
+        </div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+          {days.map(day => {
+            const dayEntries = byDay[day];
+            const dayH = dayEntries.reduce((s,e)=>s+parseFloat(e.hours||0),0);
+            const date = new Date(day+"T00:00:00");
+            const isToday = day === new Date().toISOString().slice(0,10);
+            return (
+              <div key={day}>
+                {/* Gün başlığı */}
+                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:8 }}>
+                  <div style={{ width:40, height:40, borderRadius:10, background: isToday?T.accent:`${T.accent}20`, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                    <span style={{ fontSize:16, fontWeight:800, color: isToday?"#fff":T.accent2, lineHeight:1 }}>{date.getDate()}</span>
+                    <span style={{ fontSize:9, color: isToday?"rgba(255,255,255,0.8)":T.text3, textTransform:"uppercase" }}>
+                      {date.toLocaleDateString("tr-TR",{weekday:"short"})}
+                    </span>
+                  </div>
+                  <div style={{ flex:1, height:1, background:T.border }}/>
+                  <span style={{ fontSize:13, fontWeight:700, color:T.accent2 }}>{dayH.toFixed(1)}h</span>
+                </div>
+
+                {/* Gündeki eforlar */}
+                <div style={{ marginLeft:50, display:"flex", flexDirection:"column", gap:8 }}>
+                  {dayEntries.map((e,i) => {
+                    const isProj = e._type === "project";
+                    const billable = isProj ? e.projects?.billable !== false : true;
+                    const color = isProj ? (billable ? T.teal : T.text3) : T.accent;
+                    const label = isProj ? (e.projects?.no ? `${e.projects.no} — ${e.projects.name||""}` : e.projects?.name||"Proje") : e.ticket_no;
+                    const statusLabel = isProj ? (billable?"Faturalanabilir":"Faturalanmaz") : (e.billed?"Faturalandı":"Bekliyor");
+                    const statusColor = isProj ? (billable?T.teal:T.text3) : (e.billed?T.success:T.warning);
+                    return (
+                      <div key={e.id||i} style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:12, padding:"12px 16px", display:"flex", alignItems:"center", gap:12, borderLeft:`3px solid ${color}` }}>
+                        <div style={{ width:36, height:36, borderRadius:8, background:color+"20", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
+                          <Icon name={isProj?"folder":"tickets"} size={16} color={color}/>
+                        </div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:13, fontWeight:700, color:T.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{label}</div>
+                          {e.description && <div style={{ fontSize:12, color:T.text3, marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{e.description}</div>}
+                        </div>
+                        <Badge color={statusColor} bg={statusColor+"18"}>{statusLabel}</Badge>
+                        <div style={{ fontSize:18, fontWeight:800, color:T.accent2, flexShrink:0 }}>{e.hours}h</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Efor Ekle Modal */}
+      {showAdd && (
+        <Modal title="Efor Ekle" onClose={()=>setShowAdd(false)} width={480}>
+          {/* Tür seçimi */}
+          <div style={{ display:"flex", gap:8, marginBottom:16, background:T.bg3, borderRadius:10, padding:4 }}>
+            {[["ticket","🎫 Ticket'a Efor"],["project","📁 Projeye Efor"]].map(([val,lbl])=>(
+              <button key={val} onClick={()=>setEntryType(val)} style={{ flex:1, padding:"8px", borderRadius:8, border:"none", cursor:"pointer", background:entryType===val?T.card:"transparent", color:entryType===val?T.text:T.text3, fontSize:13, fontWeight:entryType===val?700:400, boxShadow:entryType===val?"0 2px 8px rgba(0,0,0,0.15)":"none", transition:"all 0.15s" }}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+
+          {entryType === "ticket" ? (
+            <Sel label="Ticket *" value={form.ticket_no} onChange={e=>setForm(p=>({...p,ticket_no:e.target.value}))}>
+              <option value="">Ticket seçin...</option>
+              {tickets?.map(t=><option key={t.id} value={t.no}>{t.no} — {t.title}</option>)}
+            </Sel>
+          ) : (
+            <Sel label="Proje *" value={form.project_id} onChange={e=>setForm(p=>({...p,project_id:e.target.value}))}>
+              <option value="">Proje seçin...</option>
+              {projects.map(p=>(
+                <option key={p.id} value={p.id}>
+                  {p.no} — {p.name} {p.billable===false?"(Faturalanmaz)":""}
+                </option>
+              ))}
+            </Sel>
+          )}
+
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+            <Inp label="Tarih *" type="date" value={form.date} onChange={e=>setForm(p=>({...p,date:e.target.value}))}/>
+            <Inp label="Saat *" type="number" step="0.5" min="0.5" max="24" value={form.hours} onChange={e=>setForm(p=>({...p,hours:e.target.value}))} placeholder="2.5"/>
+          </div>
+          <Textarea label="Açıklama" value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))} rows={2} placeholder="Yapılan iş..."/>
+
+          {entryType === "project" && form.project_id && (()=>{
+            const proj = projects.find(p=>p.id===form.project_id);
+            if (!proj) return null;
+            return (
+              <div style={{ padding:"10px 12px", borderRadius:8, background: proj.billable===false?T.warning+"15":T.success+"15", border:`1px solid ${proj.billable===false?T.warning:T.success}40`, fontSize:12, color: proj.billable===false?T.warning:T.success, fontWeight:600 }}>
+                {proj.billable===false ? "⚠️ Bu proje faturalanmaz — efor faturalarda görünmez" : "✓ Bu proje faturalanabilir"}
+              </div>
+            );
+          })()}
+
+          <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:8 }}>
+            <Btn variant="ghost" onClick={()=>setShowAdd(false)}>İptal</Btn>
+            <Btn onClick={save} disabled={saving}>{saving?"Kaydediliyor...":"Kaydet"}</Btn>
           </div>
         </Modal>
       )}
@@ -3418,7 +3731,8 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
 
   const emptyForm = () => ({
     name:"", description:"", company_id: isCustomer ? profile.company_id : "",
-    status:"Planning", start_date:"", end_date:"", assignees:[], topics:[]
+    status:"Planning", start_date:"", end_date:"", assignees:[], topics:[],
+    billable: true
   });
   const [form, setForm] = useState(emptyForm());
 
@@ -3709,7 +4023,10 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
               >
                 <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:8 }}>
                   <span style={{ fontSize:11, fontWeight:700, color:T.text3, fontFamily:"monospace" }}>{proj.no}</span>
-                  <Badge color={sc.color} bg={sc.bg}>{sc.label}</Badge>
+                  <div style={{ display:"flex", gap:5 }}>
+                    {proj.billable === false && <Badge color={T.warning} bg={T.warning+"18"}>Faturalanmaz</Badge>}
+                    <Badge color={sc.color} bg={sc.bg}>{sc.label}</Badge>
+                  </div>
                 </div>
                 <h4 style={{ margin:"0 0 6px", fontSize:15, fontWeight:700, color:T.text }}>{proj.name}</h4>
                 {Array.isArray(proj.topics) && proj.topics.length > 0 && (
@@ -3780,6 +4097,22 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
               <ConsultantDropdown consultants={consultants} selected={form.assignees} onChange={list=>setForm(p=>({...p,assignees:list}))}/>
             </div>
           )}
+
+          {/* Faturalanabilir checkbox */}
+          <div style={{ marginBottom:16, padding:"12px 14px", borderRadius:10, border:`1px solid ${form.billable ? T.success+"50" : T.border}`, background: form.billable ? T.success+"08" : T.bg3 }}>
+            <label style={{ display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}>
+              <input type="checkbox" checked={form.billable} onChange={e=>setForm(p=>({...p,billable:e.target.checked}))}
+                style={{ width:16, height:16, cursor:"pointer", accentColor: T.success }}/>
+              <div>
+                <div style={{ fontSize:13, fontWeight:700, color: form.billable ? T.success : T.text2 }}>
+                  {form.billable ? "✓ Faturalanabilir Proje" : "Faturalanmaz Proje (Şirket İçi)"}
+                </div>
+                <div style={{ fontSize:11, color:T.text3, marginTop:2 }}>
+                  {form.billable ? "Bu projenin eforları fatura oluştururken görünür" : "Bu projenin eforları hiçbir faturada görünmez"}
+                </div>
+              </div>
+            </label>
+          </div>
           <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:8 }}>
             <Btn variant="ghost" onClick={()=>setShowModal(false)}>İptal</Btn>
             <Btn onClick={saveProject} disabled={saving}>{saving?"Kaydediliyor...":"Oluştur"}</Btn>
@@ -4150,6 +4483,7 @@ function AppInner() {
       case "companies":     return <CompaniesPage profile={profile} companies={companies} reloadCompanies={loadAll} allUsers={allUsers} tickets={tickets}/>;
       case "tickets":       return <TicketsPage profile={profile} companies={companies} consultants={consultants} reload={loadAll} tickets={tickets} allUsers={allUsers}/>;
       case "projects":      return <ProjectsPage profile={profile} companies={companies} consultants={consultants} allUsers={allUsers}/>;
+      case "zaman":         return <ZamanCizelgesi profile={profile} companies={companies} tickets={tickets}/>;
       case "timesheet":     return <TimesheetPage profile={profile} companies={companies} consultants={consultants} tickets={tickets}/>;
       case "invoices":      return <InvoicesPage companies={companies} consultants={consultants} tickets={tickets}/>;
       case "reports":       return <ReportsPage tickets={tickets} companies={companies} consultants={consultants}/>;
