@@ -918,7 +918,12 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     const companyId = isCustomer ? profile.company_id : form.company_id;
     if (!companyId) { showToast("Lütfen firma seçin","error"); return; }
     setSaving(true);
-    const no = "TKT-" + Date.now().toString().slice(-6);
+    const no = await (async () => {
+      const { data } = await supabase.from("tickets").select("no").order("created_at", {ascending:false}).limit(1);
+      const last = data?.[0]?.no;
+      const lastNum = last ? parseInt(last.replace("TKT-","")) : 995;
+      return "TKT-" + (isNaN(lastNum) ? 1000 : lastNum + 5);
+    })();
     const assignees = Array.isArray(form.assignees) ? form.assignees : [];
     const ticketData = { ...form, company_id:companyId, no, status:"Open", assignee: assignees[0]||null, assignees, topics: form.topics||[] };
     const { error } = await supabase.from("tickets").insert([ticketData]);
@@ -928,6 +933,18 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     setShowModal(false); setForm(empty); reloadAll();
     const company = companies.find(c=>c.id===companyId);
     notifyNewTicket({ ticket:{...ticketData,no}, company, createdBy: profile.full_name||profile.email });
+    // Admin'e bildirim (recipient_id = admin profil id)
+    const { data: adminProf } = await supabase.from("profiles").select("id").eq("role","admin").limit(1).single();
+    if (adminProf) {
+      await createNotification({
+        type: "ticket_created",
+        message: `Yeni talep: [${no}] ${ticketData.title}`,
+        detail: `Oluşturan: ${profile.full_name||profile.email}`,
+        company_id: companyId,
+        recipient_id: adminProf.id,
+        ref_id: null, ref_type: "ticket"
+      });
+    }
   };
 
   const deleteTicket = async (ticket) => {
@@ -957,13 +974,21 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     await supabase.from("tickets").update({ status, closed_at: status==="Closed" ? new Date().toISOString():null }).eq("id", ticket.id);
     showToast("Durum: " + STATUS_CONFIG[status]?.label);
     setSel(p => p ? {...p, status} : p);
-    await createNotification({
-      type: "ticket_status",
-      message: `[${ticket.no}] ${ticket.title} — durum değişti: ${STATUS_CONFIG[status]?.label}`,
-      detail: `Değiştiren: ${profile.full_name||profile.email}`,
-      company_id: ticket.company_id,
-      ref_id: ticket.id, ref_type: "ticket"
-    });
+    // Sadece bu ticket'a atanmış danışmanlara bildirim
+    const assignedNames = Array.isArray(ticket.assignees) ? ticket.assignees : (ticket.assignee ? [ticket.assignee] : []);
+    if (assignedNames.length > 0) {
+      const { data: assignedProfs } = await supabase.from("profiles").select("id,full_name,email").in("full_name", assignedNames);
+      for (const cp of (assignedProfs||[])) {
+        await createNotification({
+          type: "ticket_status",
+          message: `[${ticket.no}] ${ticket.title} — durum değişti: ${STATUS_CONFIG[status]?.label}`,
+          detail: `Değiştiren: ${profile.full_name||profile.email}`,
+          company_id: ticket.company_id,
+          recipient_id: cp.id,
+          ref_id: ticket.id, ref_type: "ticket"
+        });
+      }
+    }
     reloadAll();
   };
 
@@ -977,20 +1002,22 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     showToast("Atama güncellendi!");
     setSel(p => p ? {...p, assignees, assignee: assignees[0]||null} : p);
     reloadAll();
-    // Notify newly added consultants
+    // Sadece yeni eklenen danışmanlara bildirim + mail
     const oldAssignees = Array.isArray(ticket.assignees) ? ticket.assignees : [];
     const newOnes = assignees.filter(a => !oldAssignees.includes(a));
     const company = companies.find(c=>c.id===ticket.company_id);
-    if (newOnes.length > 0) {
-      await createNotification({
-        type: "ticket_assigned",
-        message: `[${ticket.no}] ${ticket.title} — danışman atandı: ${newOnes.join(", ")}`,
-        company_id: ticket.company_id,
-        ref_id: ticket.id, ref_type: "ticket"
-      });
-    }
     for (const name of newOnes) {
       const cp = consultants.find(c=>c.name===name);
+      if (cp?.id) {
+        await createNotification({
+          type: "ticket_assigned",
+          message: `[${ticket.no}] ${ticket.title} — size atandı`,
+          detail: `Atayan: ${profile.full_name||profile.email}`,
+          company_id: ticket.company_id,
+          recipient_id: cp.id,
+          ref_id: ticket.id, ref_type: "ticket"
+        });
+      }
       if (cp?.email) notifyAssignment({ ticket, company, consultantEmail:cp.email, consultantName:name });
     }
   };
@@ -1011,13 +1038,6 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     setSavingEfor(false);
     if (error) { showToast(error.message,"error"); return; }
     showToast("Efor kaydedildi!");
-    await createNotification({
-      type: "efor_added",
-      message: `[${sel.no}] ${sel.title} — ${eforForm.hours}h efor eklendi`,
-      detail: `${profile.full_name||profile.email}: ${eforForm.description||""}`,
-      company_id: sel.company_id,
-      ref_id: sel.id, ref_type: "ticket"
-    });
     setShowEforForm(false);
     setEforForm({ date:new Date().toISOString().slice(0,10), hours:"", description:"", company_id:"" });
     loadEfors(sel.no);
@@ -1267,7 +1287,7 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
                   <Icon name="users" size={16} color={T.purple}/>
                   <h4 style={{ margin:0, fontSize:14, fontWeight:700, color:T.text }}>Danışman Atama</h4>
                 </div>
-                {/* Assigned badges */}
+                {/* Atanmış danışmanlar */}
                 <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:10 }}>
                   {assignees.length === 0 ? (
                     <span style={{ fontSize:12, color:T.warning, background:T.warning+"15", padding:"3px 10px", borderRadius:20 }}>Atanmamış</span>
@@ -1279,12 +1299,8 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
                     </span>
                   ))}
                 </div>
-                {/* Dropdown listbox */}
-                <ConsultantDropdown
-                  consultants={consultants}
-                  selected={assignees}
-                  onChange={list=>assignConsultants(sel,list)}
-                />
+                {/* Seç + Ata */}
+                <PendingAssign ticket={sel} assignees={assignees} consultants={consultants} onAssign={assignConsultants}/>
               </div>
             )}
 
@@ -1862,6 +1878,46 @@ const CompaniesPage = ({ profile, companies, reloadCompanies, allUsers = [], tic
     </div>
   );
 };
+// Danışman seç → "Ata" butonuyla onayla
+const PendingAssign = ({ ticket, assignees, consultants, onAssign }) => {
+  const [pending, setPending] = useState([...assignees]);
+  useEffect(() => { setPending([...assignees]); }, [ticket?.id]);
+
+  const toggle = (name) => {
+    setPending(p => p.includes(name) ? p.filter(x=>x!==name) : [...p, name]);
+  };
+
+  const hasChange = JSON.stringify([...pending].sort()) !== JSON.stringify([...assignees].sort());
+
+  return (
+    <div>
+      <div style={{ display:"flex", flexDirection:"column", gap:4, marginBottom: hasChange ? 10 : 0 }}>
+        {consultants.map(c=>(
+          <button key={c.id} onClick={()=>toggle(c.name)}
+            style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", borderRadius:8,
+              background: pending.includes(c.name) ? `${T.accent}20` : "transparent",
+              border: `1px solid ${pending.includes(c.name) ? T.accent : T.border}`,
+              cursor:"pointer", textAlign:"left", transition:"all 0.15s" }}
+          >
+            <span style={{ width:22, height:22, borderRadius:"50%", background:T.grad, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, color:"#fff", fontWeight:700, flexShrink:0 }}>
+              {c.name?.[0]?.toUpperCase()}
+            </span>
+            <span style={{ fontSize:13, color:T.text, flex:1 }}>{c.name}</span>
+            {pending.includes(c.name) && <span style={{ fontSize:12, color:T.accent2 }}>✓</span>}
+          </button>
+        ))}
+      </div>
+      {hasChange && (
+        <button onClick={()=>onAssign(ticket, pending)}
+          style={{ width:"100%", padding:"9px", borderRadius:8, background:T.accent, border:"none",
+            cursor:"pointer", color:"#fff", fontSize:13, fontWeight:700 }}>
+          Ata ({pending.length} danışman)
+        </button>
+      )}
+    </div>
+  );
+};
+
 const ConsultantDropdown = ({ consultants, selected, onChange }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -1981,21 +2037,30 @@ const exportToCSV = (rows, filename) => {
 
 // ─── DATE RANGE HELPERS ──────────────────────────────────────────────────────
 const getDateRange = (mode, ref) => {
-  const now = ref ? new Date(ref) : new Date();
+  // Bugünü yerel saat ile al (UTC parse hatası önlenir)
+  const todayLocal = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  };
+  const dateStr = ref || todayLocal();
+  // ref string'ini UTC sorunu olmadan parse et
+  const [y, m, day] = dateStr.split("-").map(Number);
+  const now = new Date(y, m-1, day); // yerel saat, UTC değil
+
   if (mode === "daily") {
-    const d = now.toISOString().slice(0,10);
-    return { from: d, to: d };
+    return { from: dateStr, to: dateStr };
   }
   if (mode === "weekly") {
-    const day = now.getDay() || 7;
-    const mon = new Date(now); mon.setDate(now.getDate() - day + 1);
+    const dow = now.getDay() || 7; // 1=Pzt 7=Paz
+    const mon = new Date(now); mon.setDate(day - dow + 1);
     const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-    return { from: mon.toISOString().slice(0,10), to: sun.toISOString().slice(0,10) };
+    const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    return { from: fmt(mon), to: fmt(sun) };
   }
   // monthly
-  const y = now.getFullYear(), m = String(now.getMonth()+1).padStart(2,"0");
-  const lastDay = new Date(y, now.getMonth()+1, 0).getDate();
-  return { from: `${y}-${m}-01`, to: `${y}-${m}-${lastDay}` };
+  const lastDay = new Date(y, m, 0).getDate();
+  const mo = String(m).padStart(2,"0");
+  return { from: `${y}-${mo}-01`, to: `${y}-${mo}-${lastDay}` };
 };
 
 // ─── TIMESHEET PAGE (ENHANCED) ───────────────────────────────────────────────
@@ -2109,9 +2174,9 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
   };
 
   const modeLabel = periodMode==="daily"?"Günlük":periodMode==="weekly"?"Haftalık":"Aylık";
-  const rangeLabel = periodMode==="daily" ? new Date(range.from).toLocaleDateString("tr-TR")
-    : periodMode==="weekly" ? `${new Date(range.from).toLocaleDateString("tr-TR")} – ${new Date(range.to).toLocaleDateString("tr-TR")}`
-    : new Date(range.from).toLocaleDateString("tr-TR",{month:"long",year:"numeric"});
+  const rangeLabel = periodMode==="daily" ? new Date(range.from + "T12:00:00").toLocaleDateString("tr-TR")
+    : periodMode==="weekly" ? `${new Date(range.from + "T12:00:00").toLocaleDateString("tr-TR")} – ${new Date(range.to + "T12:00:00").toLocaleDateString("tr-TR")}`
+    : new Date(range.from + "T12:00:00").toLocaleDateString("tr-TR",{month:"long",year:"numeric"});
 
   return (
     <div>
@@ -2455,12 +2520,6 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
         billed: false,
       }]);
       if (error) { showToast(error.message,"error"); setSaving(false); return; }
-      await createNotification({
-        type: "efor_added",
-        message: `[${form.ticket_no}] ${ticket?.title||form.ticket_no} — ${form.hours}h efor eklendi`,
-        detail: `${who}: ${form.description||""}`,
-        company_id: ticket?.company_id||null, ref_id: ticket?.id||null, ref_type:"ticket"
-      });
     } else {
       const proj = projects.find(p=>p.id===form.project_id);
       const { error } = await supabase.from("project_efors").insert([{
@@ -2472,11 +2531,6 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
         company_id: proj?.company_id || null,
       }]);
       if (error) { showToast(error.message,"error"); setSaving(false); return; }
-      await createNotification({
-        type: "efor_added",
-        message: `${who} — ${proj?.name||""} projesine ${form.hours}h efor ekledi`,
-        company_id: proj?.company_id||null
-      });
     }
     setSaving(false);
     showToast("Efor kaydedildi!");
@@ -3058,9 +3112,9 @@ const InvoicesPage = ({ companies, consultants, tickets }) => {
   const totalAmount = invoices.reduce((s,i)=>s+(parseFloat(i.total)||0),0);
   const paidAmount  = invoices.filter(i=>i.paid).reduce((s,i)=>s+(parseFloat(i.total)||0),0);
 
-  const rangeLabel = periodMode==="daily" ? new Date(range.from).toLocaleDateString("tr-TR")
-    : periodMode==="weekly" ? `${new Date(range.from).toLocaleDateString("tr-TR")} – ${new Date(range.to).toLocaleDateString("tr-TR")}`
-    : new Date(range.from).toLocaleDateString("tr-TR",{month:"long",year:"numeric"});
+  const rangeLabel = periodMode==="daily" ? new Date(range.from + "T12:00:00").toLocaleDateString("tr-TR")
+    : periodMode==="weekly" ? `${new Date(range.from + "T12:00:00").toLocaleDateString("tr-TR")} – ${new Date(range.to + "T12:00:00").toLocaleDateString("tr-TR")}`
+    : new Date(range.from + "T12:00:00").toLocaleDateString("tr-TR",{month:"long",year:"numeric"});
 
   const doExport = () => {
     const rows = invoices.map(inv => ({
@@ -3319,9 +3373,9 @@ const ReportsPage = ({ tickets, companies, consultants }) => {
     setRefDate(d.toISOString().slice(0,10));
   };
 
-  const rangeLabel = periodMode==="daily" ? new Date(range.from).toLocaleDateString("tr-TR")
-    : periodMode==="weekly" ? `${new Date(range.from).toLocaleDateString("tr-TR")} – ${new Date(range.to).toLocaleDateString("tr-TR")}`
-    : new Date(range.from).toLocaleDateString("tr-TR",{month:"long",year:"numeric"});
+  const rangeLabel = periodMode==="daily" ? new Date(range.from + "T12:00:00").toLocaleDateString("tr-TR")
+    : periodMode==="weekly" ? `${new Date(range.from + "T12:00:00").toLocaleDateString("tr-TR")} – ${new Date(range.to + "T12:00:00").toLocaleDateString("tr-TR")}`
+    : new Date(range.from + "T12:00:00").toLocaleDateString("tr-TR",{month:"long",year:"numeric"});
 
   const byStatus   = Object.entries(STATUS_CONFIG).map(([k,v])=>({ label:v.label, count:filtered.filter(t=>t.status===k).length, color:v.color }));
   const byPriority = Object.entries(PRIORITY_CONFIG).map(([k,v])=>({ label:v.label, count:filtered.filter(t=>t.priority===k).length, color:v.color }));
@@ -3759,14 +3813,33 @@ const NotificationsPage = ({ profile, companies, consultants }) => {
 
   useEffect(() => { loadNotifs(); }, []);
 
+  const playNotifSound = () => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.35);
+    } catch(_) {}
+  };
+
   const loadNotifs = async () => {
     setLoading(true);
     try {
       let q = supabase.from("notifications").select("*").order("created_at", { ascending: false }).limit(100);
       if (profile?.role === "consultant") {
-        q = q.or(`recipient_id.eq.${profile.id},recipient_id.is.null`);
+        // Sadece kendi atandığı ticket/proje bildirimleri
+        q = q.eq("recipient_id", profile.id);
       } else if (profile?.role === "customer") {
         q = q.eq("company_id", profile.company_id);
+      }
+      // admin: recipient_id olan (kendine) veya null (herkese açık)
+      if (profile?.role === "admin") {
+        q = q.or(`recipient_id.eq.${profile.id},recipient_id.is.null`);
       }
       const { data } = await q;
       setNotifs(data || []);
@@ -3958,7 +4031,12 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
     const cId = isCustomer ? profile.company_id : form.company_id;
     if (!cId) { showToast("Firma seçin","error"); return; }
     setSaving(true);
-    const no = "PRJ-" + Date.now().toString().slice(-6);
+    const no = await (async () => {
+      const { data } = await supabase.from("projects").select("no").order("created_at", {ascending:false}).limit(1);
+      const last = data?.[0]?.no;
+      const lastNum = last ? parseInt(last.replace("PRJ-","")) : 995;
+      return "PRJ-" + (isNaN(lastNum) ? 1000 : lastNum + 5);
+    })();
     const { error } = await supabase.from("projects").insert([{ ...form, no, company_id:cId }]);
     setSaving(false);
     if (error) { showToast(error.message,"error"); return; }
@@ -3996,7 +4074,6 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
     setSavingEfor(false);
     if (error) { showToast(error.message,"error"); return; }
     showToast("Efor kaydedildi!");
-    await createNotification({ type:"efor_added", message:`${profile.full_name||profile.email} — ${sel.name} projesine ${eforForm.hours}h efor ekledi`, company_id:sel.company_id });
     setShowEforForm(false);
     setEforForm({ date: new Date().toISOString().slice(0,10), hours:"", description:"", company_id:"" });
     loadEfors(sel.id);
@@ -4629,13 +4706,39 @@ function AppInner() {
       setAllUsers((allProfs || []).filter(u => u.email));
       // Unread notifications count — tablo yoksa sessizce geç
       try {
-        // 7 günden eski bildirimleri otomatik sil
+        // 7 günden eski TÜM bildirimleri sil (okunmuş/okunmamış fark etmez)
         const weekAgo = new Date();
         weekAgo.setDate(weekAgo.getDate() - 7);
-        await supabase.from("notifications").delete().lt("created_at", weekAgo.toISOString());
-        // Okunmamış sayısını güncelle
+        await supabase.from("notifications").delete()
+          .lt("created_at", weekAgo.toISOString());
+      // Okunmamış sayısını güncelle + realtime subscription
         const { count } = await supabase.from("notifications").select("*", { count:"exact", head:true }).eq("read", false);
         setUnreadCount(count || 0);
+
+        // Realtime: yeni bildirim gelince sayacı artır + ses çal
+        supabase.channel("notif-live")
+          .on("postgres_changes", { event:"INSERT", schema:"public", table:"notifications" }, (payload) => {
+            const n = payload.new;
+            // Sadece bana gelen bildirimleri say
+            const isForMe = !n.recipient_id || n.recipient_id === p?.id ||
+              (p?.role === "customer" && n.company_id === p?.company_id);
+            // Efor bildirimi değilse ses çal
+            if (isForMe && n.type !== "efor_added") {
+              setUnreadCount(c => c + 1);
+              try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.frequency.setValueAtTime(880, ctx.currentTime);
+                osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.08);
+                gain.gain.setValueAtTime(0.15, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+                osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.35);
+              } catch(_) {}
+            }
+          })
+          .subscribe();
       } catch(_) { setUnreadCount(0); }
     } catch(err) {
       console.error("loadAll error:", err);
