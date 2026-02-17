@@ -1442,6 +1442,25 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
                 </button>
               ))}
             </div>
+            <Btn variant="success" size="sm" onClick={()=>{
+              const rows = filtered.map(t => ({
+                "No":           t.no,
+                "Başlık":       t.title,
+                "Durum":        STATUS_CONFIG[t.status]?.label || t.status,
+                "Öncelik":      PRIORITY_CONFIG[t.priority]?.label || t.priority,
+                "Firma":        companies.find(c=>c.id===t.company_id)?.name || "",
+                "Danışmanlar":  (Array.isArray(t.assignees)?t.assignees:t.assignee?[t.assignee]:[]).join(", "),
+                "Konular":      (Array.isArray(t.topics)?t.topics.map(id=>TICKET_TOPICS.find(tp=>tp.id===id)?.label||id):[]).join(", "),
+                "Açılış Tarihi": new Date(t.created_at).toLocaleDateString("tr-TR"),
+                "Kapanış Tarihi": t.closed_at ? new Date(t.closed_at).toLocaleDateString("tr-TR") : "",
+                "Açıklama":     t.description || "",
+              }));
+              const d = new Date();
+              const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+              exportToCSV(rows, `talepler_${dateStr}`);
+            }}>
+              <Icon name="download" size={14}/> Excel'e Aktar
+            </Btn>
             <Btn onClick={()=>setShowModal(true)}>
               <Icon name="plus" size={15}/> Yeni Talep
             </Btn>
