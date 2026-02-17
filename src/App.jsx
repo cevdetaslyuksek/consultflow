@@ -695,7 +695,7 @@ const EmailAutoInput = ({ label, value, onChange, placeholder, allUsers }) => {
   );
 };
 
-const EmailThread = ({ ticket, profile, companies, allUsers = [] }) => {
+const EmailThread = ({ ticket, profile, companies, allUsers = [], onMessageSent }) => {
   const [emails, setEmails] = useState([]);
   const [loading, setLoading] = useState(true);
   const [composing, setComposing] = useState(false);
@@ -763,6 +763,7 @@ const EmailThread = ({ ticket, profile, companies, allUsers = [] }) => {
       setComposing(false);
       setForm({ to:"", cc:"", subject:"", body:"" });
       loadEmails();
+      onMessageSent?.();
     } else {
       // Fallback: store locally
       const localMsg = { ...msgData, id: Date.now(), created_at: new Date().toISOString() };
@@ -911,8 +912,21 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
 
   const loadLogs = async (ticketId) => {
     try {
-      const { data } = await supabase.from("ticket_logs").select("*").eq("ticket_id", ticketId).order("created_at", {ascending:true});
-      if (data) setTicketLogs(p => ({ ...p, [ticketId]: data }));
+      // ticket_logs'dan aktivite kayıtları
+      const { data: logs } = await supabase.from("ticket_logs").select("*").eq("ticket_id", ticketId).order("created_at", {ascending:true});
+      // ticket_messages'dan mesaj logları
+      const { data: msgs } = await supabase.from("ticket_messages").select("*").eq("ticket_id", ticketId).order("created_at", {ascending:true});
+      const msgLogs = (msgs||[]).map(m => ({
+        id: "msg_"+m.id,
+        ticket_id: ticketId,
+        event: m.author_role === "customer" ? "customer_replied" : "consultant_replied",
+        detail: m.subject || m.message?.slice(0,60) + (m.message?.length>60?"...":""),
+        actor: m.author_name,
+        created_at: m.created_at,
+      }));
+      // Birleştir ve tarihe göre sırala
+      const all = [...(logs||[]), ...msgLogs].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+      setTicketLogs(p => ({ ...p, [ticketId]: all }));
     } catch(e) { /* ticket_logs tablosu yoksa sessiz geç */ }
   };
 
@@ -1020,12 +1034,15 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     if (error) { showToast(error.message,"error"); return; }
     showToast("Atama güncellendi!");
     setSel(p => p ? {...p, assignees, assignee: assignees[0]||null} : p);
-    reloadAll();
     // Sadece yeni eklenen danışmanlara bildirim + mail + log
     const oldAssignees = Array.isArray(ticket.assignees) ? ticket.assignees : [];
     const newOnes = assignees.filter(a => !oldAssignees.includes(a));
     const removedOnes = oldAssignees.filter(a => !assignees.includes(a));
     const company = companies.find(c=>c.id===ticket.company_id);
+    // Silinen danışmanlar için log
+    for (const name of removedOnes) {
+      await addTicketLog({ ticket_id: ticket.id, ticket_no: ticket.no, event: "consultant_removed", detail: name, actor: profile.full_name||profile.email });
+    }
     for (const name of newOnes) {
       await addTicketLog({ ticket_id: ticket.id, ticket_no: ticket.no, event: "consultant_assigned", detail: name, actor: profile.full_name||profile.email });
       const cp = consultants.find(c=>c.name===name);
@@ -1041,6 +1058,9 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
       }
       if (cp?.email) notifyAssignment({ ticket, company, consultantEmail:cp.email, consultantName:name });
     }
+    reloadAll();
+    // Logları yenile
+    await loadLogs(ticket.id);
   };
 
   const saveEfor = async () => {
@@ -1215,7 +1235,7 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
                 <Icon name="mail" size={18} color={T.accent2}/>
                 <h3 style={{ margin:0, fontSize:16, fontWeight:700, color:T.text }}>E-posta Yazışmaları</h3>
               </div>
-              <EmailThread ticket={sel} profile={profile} companies={companies} allUsers={allUsers}/>
+              <EmailThread ticket={sel} profile={profile} companies={companies} allUsers={allUsers} onMessageSent={()=>loadLogs(sel.id)}/>
             </div>
 
             {/* Effort Timeline */}
@@ -1363,7 +1383,10 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
                 const LOG_CONFIG = {
                   ticket_created:      { icon:"🎫", color:T.accent2,  label:"Ticket Açıldı" },
                   consultant_assigned: { icon:"👤", color:T.purple,   label:"Danışman Atandı" },
+                  consultant_removed:  { icon:"➖", color:"#EF4444",  label:"Danışman Çıkarıldı" },
                   status_changed:      { icon:"🔄", color:T.teal,     label:"Durum Değişti" },
+                  customer_replied:    { icon:"💬", color:"#F59E0B",  label:"Müşteri Yanıtladı" },
+                  consultant_replied:  { icon:"✉️",  color:T.accent2,  label:"Danışman Yanıtladı" },
                 };
                 // Veritabanı logları varsa onları kullan, yoksa ticket verisinden üret
                 const logs = ticketLogs[sel.id];
