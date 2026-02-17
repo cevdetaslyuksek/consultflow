@@ -928,11 +928,11 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
     setSaving(true);
     const no = await (async () => {
       const { data } = await supabase.from("tickets").select("no");
-      // Tüm TKT- numaralarından en büyüğünü bul
+      // Sadece yeni format: TKT-1000, TKT-1005 gibi 4 haneli numaralar
       let maxNum = 995;
       (data||[]).forEach(t => {
         const n = parseInt((t.no||"").replace("TKT-",""));
-        if (!isNaN(n) && n > maxNum) maxNum = n;
+        if (!isNaN(n) && n >= 1000 && n <= 9999 && n > maxNum) maxNum = n;
       });
       return "TKT-" + (maxNum + 5);
     })();
@@ -1945,7 +1945,14 @@ const CompaniesPage = ({ profile, companies, reloadCompanies, allUsers = [], tic
 // Danışman seç → "Ata" butonuyla onayla
 const PendingAssign = ({ ticket, assignees, consultants, onAssign }) => {
   const [pending, setPending] = useState([...assignees]);
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
   useEffect(() => { setPending([...assignees]); }, [ticket?.id]);
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   const toggle = (name) => {
     setPending(p => p.includes(name) ? p.filter(x=>x!==name) : [...p, name]);
@@ -1954,29 +1961,58 @@ const PendingAssign = ({ ticket, assignees, consultants, onAssign }) => {
   const hasChange = JSON.stringify([...pending].sort()) !== JSON.stringify([...assignees].sort());
 
   return (
-    <div>
-      <div style={{ display:"flex", flexDirection:"column", gap:4, marginBottom: hasChange ? 10 : 0 }}>
-        {consultants.map(c=>(
-          <button key={c.id} onClick={()=>toggle(c.name)}
-            style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 10px", borderRadius:8,
-              background: pending.includes(c.name) ? `${T.accent}20` : "transparent",
-              border: `1px solid ${pending.includes(c.name) ? T.accent : T.border}`,
-              cursor:"pointer", textAlign:"left", transition:"all 0.15s" }}
-          >
-            <span style={{ width:22, height:22, borderRadius:"50%", background:T.grad, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, color:"#fff", fontWeight:700, flexShrink:0 }}>
-              {c.name?.[0]?.toUpperCase()}
-            </span>
-            <span style={{ fontSize:13, color:T.text, flex:1 }}>{c.name}</span>
-            {pending.includes(c.name) && <span style={{ fontSize:12, color:T.accent2 }}>✓</span>}
-          </button>
-        ))}
-      </div>
-      {hasChange && (
-        <button onClick={()=>onAssign(ticket, pending)}
-          style={{ width:"100%", padding:"9px", borderRadius:8, background:T.accent, border:"none",
-            cursor:"pointer", color:"#fff", fontSize:13, fontWeight:700 }}>
-          Ata ({pending.length} danışman)
-        </button>
+    <div ref={ref} style={{ position:"relative" }}>
+      {/* Trigger button */}
+      <button onClick={()=>setOpen(p=>!p)} style={{
+        width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between",
+        padding:"9px 12px", background:T.bg3, border:`1px solid ${open ? T.accent : T.border}`,
+        borderRadius:10, cursor:"pointer", color:T.text2, fontSize:13, transition:"all 0.15s"
+      }}>
+        <span style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <Icon name="users" size={15} color={T.text3}/>
+          <span>{pending.length === 0 ? "Danışman seç..." : `${pending.length} danışman seçildi`}</span>
+        </span>
+        <span style={{ fontSize:10, transform:open?"rotate(180deg)":"", transition:"transform 0.2s" }}>▼</span>
+      </button>
+
+      {/* Dropdown listesi */}
+      {open && (
+        <div style={{
+          position:"absolute", top:"calc(100% + 4px)", left:0, right:0, zIndex:600,
+          background:T.bg2, border:`1px solid ${T.accent}`, borderRadius:10,
+          boxShadow:"0 16px 40px rgba(0,0,0,0.5)", overflow:"hidden"
+        }}>
+          <div style={{ maxHeight:220, overflowY:"auto" }}>
+            {consultants.map(c => {
+              const sel = pending.includes(c.name);
+              return (
+                <button key={c.id} onClick={()=>toggle(c.name)} style={{
+                  width:"100%", display:"flex", alignItems:"center", gap:8, padding:"8px 12px",
+                  background: sel ? `${T.accent}20` : "transparent",
+                  border:"none", borderBottom:`1px solid ${T.border}`,
+                  cursor:"pointer", textAlign:"left", transition:"background 0.1s"
+                }}>
+                  <span style={{ width:24, height:24, borderRadius:"50%", background:T.grad, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, color:"#fff", fontWeight:700, flexShrink:0 }}>
+                    {c.name?.[0]?.toUpperCase()}
+                  </span>
+                  <span style={{ fontSize:13, color:T.text, flex:1 }}>{c.name}</span>
+                  {sel && <span style={{ fontSize:13, color:T.accent2, fontWeight:700 }}>✓</span>}
+                </button>
+              );
+            })}
+          </div>
+          {/* Ata butonu dropdown içinde */}
+          {hasChange && (
+            <div style={{ padding:8, borderTop:`1px solid ${T.border}` }}>
+              <button onClick={()=>{ onAssign(ticket, pending); setOpen(false); }} style={{
+                width:"100%", padding:"8px", borderRadius:8, background:T.accent, border:"none",
+                cursor:"pointer", color:"#fff", fontSize:13, fontWeight:700
+              }}>
+                Ata ({pending.length} danışman)
+              </button>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -2500,7 +2536,10 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
     hours: "", description: ""
   });
   const [saving, setSaving]         = useState(false);
-  const [month, setMonth]           = useState(new Date().toISOString().slice(0,7));
+  const [fCons, setFCons]   = useState("all");
+  const [fComp, setFComp]   = useState("all");
+  const [fType, setFType]   = useState("all"); // all | ticket | project
+  const [month, setMonth]           = useState(()=>{ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`; });
   const [ticketSearch, setTicketSearch] = useState("");
   const [projSearch, setProjSearch]     = useState("");
 
@@ -2610,17 +2649,29 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
   };
 
   // Ayı gün gün grupla
+  // Filtrelenmiş kayıtlar
+  const filtered = entries.filter(e => {
+    if (fType === "ticket"  && e._type !== "ticket")  return false;
+    if (fType === "project" && e._type !== "project") return false;
+    if (fCons !== "all" && e.consultant !== fCons) return false;
+    if (fComp !== "all") {
+      const compId = e._type === "project" ? e.projects?.company_id : e.company_id;
+      if (compId !== fComp) return false;
+    }
+    return true;
+  });
+
   const byDay = {};
-  entries.forEach(e => {
+  filtered.forEach(e => {
     const d = e.date?.slice(0,10);
     if (!byDay[d]) byDay[d] = [];
     byDay[d].push(e);
   });
   const days = Object.keys(byDay).sort((a,b)=>b.localeCompare(a));
 
-  const totalH     = entries.reduce((s,e)=>s+parseFloat(e.hours||0),0);
-  const ticketH    = entries.filter(e=>e._type==="ticket").reduce((s,e)=>s+parseFloat(e.hours||0),0);
-  const projH      = entries.filter(e=>e._type==="project").reduce((s,e)=>s+parseFloat(e.hours||0),0);
+  const totalH     = filtered.reduce((s,e)=>s+parseFloat(e.hours||0),0);
+  const ticketH    = filtered.filter(e=>e._type==="ticket").reduce((s,e)=>s+parseFloat(e.hours||0),0);
+  const projH      = filtered.filter(e=>e._type==="project").reduce((s,e)=>s+parseFloat(e.hours||0),0);
 
   const shiftMonth = (dir) => {
     const [y,m] = month.split("-").map(Number);
@@ -2637,23 +2688,50 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
         action={<Btn onClick={()=>setShowAdd(true)}><Icon name="plus" size={15}/> Efor Ekle</Btn>}
       />
 
-      {/* Ay navigasyon */}
-      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:8, background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"6px 14px" }}>
-          <button onClick={()=>shiftMonth(-1)} style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:20, lineHeight:1 }}>‹</button>
-          <span style={{ fontSize:14, fontWeight:700, color:T.text, minWidth:160, textAlign:"center" }}>{monthLabel}</span>
-          <button onClick={()=>shiftMonth(1)}  style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:20, lineHeight:1 }}>›</button>
-          <button onClick={()=>setMonth(new Date().toISOString().slice(0,7))} style={{ background:`${T.accent}20`, border:"none", cursor:"pointer", color:T.accent2, fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:6 }}>Bu Ay</button>
+      {/* Ay navigasyon + Filtreler */}
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16, flexWrap:"wrap" }}>
+        {/* Ay seçici */}
+        <div style={{ display:"flex", alignItems:"center", gap:4, background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"6px 10px" }}>
+          <button onClick={()=>shiftMonth(-1)} style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:20, lineHeight:1, padding:"0 4px" }}>‹</button>
+          <span style={{ fontSize:14, fontWeight:700, color:T.text, minWidth:130, textAlign:"center" }}>{monthLabel}</span>
+          <button onClick={()=>shiftMonth(1)}  style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:20, lineHeight:1, padding:"0 4px" }}>›</button>
+          <button onClick={()=>{ const n=new Date(); setMonth(`${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}`); }} style={{ background:`${T.accent}20`, border:"none", cursor:"pointer", color:T.accent2, fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:6 }}>Bu Ay</button>
         </div>
-        {/* Özet istatistikler */}
-        <div style={{ display:"flex", gap:8, flex:1 }}>
+
+        {/* Danışman filtresi (sadece admin) */}
+        {isAdmin && (
+          <select value={fCons} onChange={e=>setFCons(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
+            <option value="all">Tüm Danışmanlar</option>
+            {[...new Set(entries.map(e=>e.consultant).filter(Boolean))].sort().map(c=>(
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        )}
+
+        {/* Firma filtresi (sadece admin) */}
+        {isAdmin && (
+          <select value={fComp} onChange={e=>setFComp(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
+            <option value="all">Tüm Firmalar</option>
+            {companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        )}
+
+        {/* Tür filtresi */}
+        <select value={fType} onChange={e=>setFType(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
+          <option value="all">Tümü (Ticket + Proje)</option>
+          <option value="ticket">Sadece Ticket</option>
+          <option value="project">Sadece Proje</option>
+        </select>
+
+        {/* Özet sayaçlar */}
+        <div style={{ display:"flex", gap:8, marginLeft:"auto" }}>
           {[
             { label:"Toplam", value:`${totalH.toFixed(1)}h`, color:T.accent2 },
             { label:"Ticket", value:`${ticketH.toFixed(1)}h`, color:T.accent },
             { label:"Proje",  value:`${projH.toFixed(1)}h`,  color:T.teal },
           ].map(s=>(
-            <div key={s.label} style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:10, padding:"8px 14px", minWidth:80 }}>
-              <div style={{ fontSize:18, fontWeight:800, color:s.color }}>{s.value}</div>
+            <div key={s.label} style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:10, padding:"6px 12px", minWidth:70, textAlign:"center" }}>
+              <div style={{ fontSize:16, fontWeight:800, color:s.color }}>{s.value}</div>
               <div style={{ fontSize:11, color:T.text3 }}>{s.label}</div>
             </div>
           ))}
@@ -4116,7 +4194,7 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
       let maxNum = 995;
       (data||[]).forEach(p => {
         const n = parseInt((p.no||"").replace("PRJ-",""));
-        if (!isNaN(n) && n > maxNum) maxNum = n;
+        if (!isNaN(n) && n >= 1000 && n <= 9999 && n > maxNum) maxNum = n;
       });
       return "PRJ-" + (maxNum + 5);
     })();
