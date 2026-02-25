@@ -393,8 +393,9 @@ const LoginPage = ({ onLogin }) => {
 // ─── MOBİL ALT NAVİGASYON ────────────────────────────────────────────────────
 const MobileNav = ({ page, setPage, profile, onLogout, unreadCount, themeT }) => {
   const { T } = useTheme();
-  const isAdmin = profile?.role === "admin";
-  const isCons  = profile?.role === "consultant";
+  const isAdmin   = profile?.role === "admin";
+  const isManager = profile?.role === "manager";
+  const isCons    = profile?.role === "consultant";
   const [menuOpen, setMenuOpen] = useState(false);
 
   // Ana sekmeler (max 4 + "Daha Fazla")
@@ -407,12 +408,12 @@ const MobileNav = ({ page, setPage, profile, onLogout, unreadCount, themeT }) =>
 
   // Daha fazla menüsü
   const moreNav = [
-    ...(!isAdmin && !isCons ? [] : [{ id:"companies",  label:"Firmalar",   icon:"companies" }]),
-    ...(!isAdmin && !isCons ? [] : [{ id:"timesheet",  label:"Efor Takip", icon:"timesheet" }]),
+    ...(!isAdmin && !isManager && !isCons ? [] : [{ id:"companies",  label:"Firmalar",   icon:"companies" }]),
+    ...(!isAdmin && !isManager && !isCons ? [] : [{ id:"timesheet",  label:"Efor Takip", icon:"timesheet" }]),
     ...(!isAdmin ? [] : [{ id:"invoices",  label:"Faturalar",       icon:"invoice"  }]),
-    ...(!isAdmin ? [] : [{ id:"reports",   label:"Raporlar",        icon:"reports"  }]),
-    ...(!isAdmin ? [] : [{ id:"users",     label:"Kullanıcılar",    icon:"userplus" }]),
-    ...(!isAdmin ? [] : [{ id:"ayarlar",   label:"Platform Ayrları",icon:"settings" }]),
+    ...(!isAdmin && !isManager ? [] : [{ id:"reports",   label:"Raporlar",        icon:"reports"  }]),
+    ...(!isAdmin && !isManager ? [] : [{ id:"users",     label:"Kullanıcılar",    icon:"userplus" }]),
+    ...(!isAdmin && !isManager ? [] : [{ id:"ayarlar",   label:"Platform Ayrları",icon:"settings" }]),
   ];
 
   return (
@@ -488,8 +489,9 @@ const MobileNav = ({ page, setPage, profile, onLogout, unreadCount, themeT }) =>
 // ─── SIDEBAR ─────────────────────────────────────────────────────────────────
 const Sidebar = ({ page, setPage, profile, onLogout, unreadCount = 0 }) => {
   const { mode, T, setThemeMode } = useTheme();
-  const isAdmin = profile?.role === "admin";
-  const isCons  = profile?.role === "consultant";
+  const isAdmin   = profile?.role === "admin";
+  const isManager = profile?.role === "manager";
+  const isCons    = profile?.role === "consultant";
   const nav = [
     { id:"dashboard", label:"Dashboard",    icon:"dashboard" },
     ...(!isAdmin && !isCons ? [] : [{ id:"companies",  label:"Firmalar",     icon:"companies" }]),
@@ -558,7 +560,7 @@ const Sidebar = ({ page, setPage, profile, onLogout, unreadCount = 0 }) => {
         </div>
         <div style={{ padding:"10px 12px", borderRadius:10, background:T.bg3, marginBottom:8 }}>
           <div style={{ fontSize:13, fontWeight:600, color:T.text, marginBottom:2 }}>{profile?.full_name || profile?.email?.split("@")[0]}</div>
-          <div style={{ fontSize:11, color:T.text3 }}>{profile?.role === "admin" ? "Yönetici" : profile?.role === "consultant" ? "Danışman" : "Müşteri"}</div>
+          <div style={{ fontSize:11, color:T.text3 }}>{profile?.role === "admin" ? "Yönetici" : profile?.role === "manager" ? "Yönetici" : profile?.role === "consultant" ? "Danışman" : "Müşteri"}</div>
         </div>
         <button onClick={()=>setPage("notifications")} style={{ width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"8px 12px", borderRadius:8, border:"none", cursor:"pointer", background: page==="notifications"?`${T.accent}20`:"transparent", color: page==="notifications"?T.accent2:T.text3, fontSize:13, marginBottom:4 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8 }}><Icon name="bell" size={16} color={page==="notifications"?T.accent2:T.text3}/> Bildirimler</div>
@@ -863,6 +865,7 @@ const EmailThread = ({ ticket, profile, companies, allUsers = [], onMessageSent 
 // ─── TICKETS PAGE ────────────────────────────────────────────────────────────
 const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, tickets, allUsers = [] }) => {
   const isAdmin    = profile?.role === "admin";
+  const isManager  = profile?.role === "manager";
   const isCons     = profile?.role === "consultant";
   const isCustomer = profile?.role === "customer";
   const [sel, setSel]             = useState(null);
@@ -1175,7 +1178,7 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
         </div>
         <span style={{ fontSize:12, color:T.text3, flexShrink:0 }}>{new Date(t.created_at).toLocaleDateString("tr-TR")}</span>
         <Icon name="chevron" size={16} color={T.text3}/>
-        {isAdmin && (
+        {(isAdmin||isManager) && (
           <button onClick={e=>{e.stopPropagation();setConfirmDelete({ticket:t});}} title="Sil" style={{ background:"#EF444420", border:"1px solid #EF444430", borderRadius:7, padding:"5px 7px", cursor:"pointer", color:"#EF4444", flexShrink:0, display:"flex", alignItems:"center" }}>
             <Icon name="trash" size={13} color="#EF4444"/>
           </button>
@@ -1245,7 +1248,7 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
                   <Icon name="clock" size={18} color={T.teal}/>
                   <h3 style={{ margin:0, fontSize:16, fontWeight:700, color:T.text }}>Efor Takibi</h3>
                 </div>
-                {(isAdmin||isCons) && (
+                {(isAdmin||isManager||isCons) && (
                   <Btn variant="ghost" size="sm" onClick={()=>setShowEforForm(p=>!p)}>
                     <Icon name="plus" size={13}/> Efor Ekle
                   </Btn>
@@ -1253,7 +1256,7 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
               </div>
 
               {/* Efor form */}
-              {showEforForm && (isAdmin||isCons) && (
+              {showEforForm && (isAdmin||isManager||isCons) && (
                 <div style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:14, marginBottom:14 }}>
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
                     <div>
@@ -1322,7 +1325,7 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
           {/* RIGHT */}
           <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
             {/* Consultant assignment */}
-            {isAdmin && (
+            {(isAdmin||isManager) && (
               <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:16 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
                   <Icon name="users" size={16} color={T.purple}/>
@@ -1346,7 +1349,7 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
             )}
 
             {/* Status */}
-            {(isAdmin||isCons) && (
+            {(isAdmin||isManager||isCons) && (
               <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:16 }}>
                 <h4 style={{ margin:"0 0 12px", fontSize:14, fontWeight:700, color:T.text }}>Durum Güncelle</h4>
                 <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
@@ -1485,18 +1488,18 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
         </select>
 
         {/* Company filter */}
-        {(isAdmin||isCons) && (
+        {(isAdmin||isManager||isCons) && (
           <select value={fCompany} onChange={e=>setFCompany(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
             <option value="all">Tüm Firmalar</option>
             {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}
 
-        {/* Consultant filter — admin tüm danışmanları, danışman sadece kendini görmek için filtreler */}
-        {(isAdmin || isCons) && (
+        {/* Consultant filter — admin ve manager tüm danışmanları, danışman sadece kendini görmek için filtreler */}
+        {(isAdmin || isManager || isCons) && (
           <select value={fConsultant} onChange={e=>setFConsultant(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
             <option value="all">Tüm Danışmanlar</option>
-            {isAdmin
+            {(isAdmin || isManager)
               ? consultants.map(c => <option key={c.id} value={c.name}>{c.name}</option>)
               : <option value={profile.full_name||profile.email}>{profile.full_name||profile.email} (Ben)</option>
             }
@@ -1583,7 +1586,7 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
             </div>
           </div>
 
-          {isAdmin && (
+          {(isAdmin||isManager) && (
             <div style={{ marginBottom:16 }}>
               <label style={{ display:"block", fontSize:13, fontWeight:600, color:T.text2, marginBottom:6 }}>Danışmanlar</label>
               <ConsultantDropdown
@@ -1613,8 +1616,9 @@ const TicketsPage = ({ profile, companies, consultants, reload: reloadAll, ticke
 
 // ─── OTHER PAGES (from previous version) ────────────────────────────────────
 const DashboardPage = ({ profile, tickets, companies, consultants }) => {
-  const isAdmin = profile?.role === "admin";
-  const isCons  = profile?.role === "consultant";
+  const isAdmin   = profile?.role === "admin";
+  const isManager = profile?.role === "manager";
+  const isCons    = profile?.role === "consultant";
   const stats = {
     total: tickets.length,
     open: tickets.filter(t=>t.status==="Open").length,
@@ -1752,7 +1756,7 @@ const CompaniesPage = ({ profile, companies, reloadCompanies, allUsers = [], tic
               <span style={{ fontSize:13, color:T.text3 }}>{employees.length} çalışan · {coTickets.length} talep</span>
             </div>
           </div>
-          {isAdmin && (
+          {(isAdmin||isManager) && (
             <div style={{ display:"flex", gap:8 }}>
               <Btn variant="ghost" size="sm" onClick={()=>{ setEditMode(true); setEditForm({ name:selCompany.name, email:selCompany.email||"", phone:selCompany.phone||"", address:selCompany.address||"" }); }}>
                 <Icon name="edit" size={14}/> Düzenle
@@ -1841,7 +1845,7 @@ const CompaniesPage = ({ profile, companies, reloadCompanies, allUsers = [], tic
                 Çalışanlar
                 <span style={{ marginLeft:8, fontSize:12, color:T.text3 }}>({employees.length})</span>
               </h4>
-              {isAdmin && (
+              {(isAdmin||isManager) && (
                 <div style={{ fontSize:12, color:T.text3 }}>
                   Kullanıcı Yönetimi'nden ekleyebilirsiniz
                 </div>
@@ -2207,8 +2211,9 @@ const getDateRange = (mode, ref) => {
 
 // ─── TIMESHEET PAGE (ENHANCED) ───────────────────────────────────────────────
 const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
-  const isAdmin = profile?.role === "admin";
-  const isCons  = profile?.role === "consultant";
+  const isAdmin   = profile?.role === "admin";
+  const isManager = profile?.role === "manager";
+  const isCons    = profile?.role === "consultant";
   const [entries, setEntries]     = useState([]);
   const [projEntries, setProjEntries] = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -2231,7 +2236,7 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
 
     // Ticket eforları
     let q = supabase.from("time_entries").select("*").gte("date", r.from).lte("date", r.to).order("date",{ascending:false});
-    if (!isAdmin && isCons) q = q.eq("consultant", profile.full_name||profile.email);
+    if (!isAdmin && !isManager && isCons) q = q.eq("consultant", profile.full_name||profile.email);
     const { data } = await q;
     let filtered = data || [];
     if (fCons !== "all") filtered = filtered.filter(e=>e.consultant===fCons);
@@ -2240,7 +2245,7 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
 
     // Proje eforları
     let pq = supabase.from("project_efors").select("*, projects(name, no, billable, company_id)").gte("date", r.from).lte("date", r.to).order("date",{ascending:false});
-    if (!isAdmin && isCons) pq = pq.eq("consultant", profile.full_name||profile.email);
+    if (!isAdmin && !isManager && isCons) pq = pq.eq("consultant", profile.full_name||profile.email);
     const { data: pd } = await pq;
     let pFiltered = pd || [];
     if (fCons !== "all") pFiltered = pFiltered.filter(e=>e.consultant===fCons);
@@ -2351,7 +2356,7 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
           <button onClick={()=>shiftRef(1)}  style={{ background:"none", border:"none", cursor:"pointer", color:T.text2, fontSize:18, lineHeight:1, padding:"0 4px" }}>›</button>
           <button onClick={()=>setRefDate((()=>{ const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,"0")}-${String(n.getDate()).padStart(2,"0")}`; })())} style={{ background:`${T.accent}20`, border:"none", cursor:"pointer", color:T.accent2, fontSize:11, fontWeight:700, padding:"3px 8px", borderRadius:6 }}>Bugün</button>
         </div>
-        {isAdmin && (
+        {(isAdmin||isManager) && (
           <select value={fCons} onChange={e=>setFCons(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
             <option value="all">Tüm Danışmanlar</option>
             {consultants.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
@@ -2566,8 +2571,9 @@ const TimesheetPage = ({ profile, companies, consultants, tickets }) => {
 
 // ─── ZAMAN ÇİZELGESİ ─────────────────────────────────────────────────────────
 const ZamanCizelgesi = ({ profile, companies, tickets }) => {
-  const isAdmin = profile?.role === "admin";
-  const isCons  = profile?.role === "consultant";
+  const isAdmin   = profile?.role === "admin";
+  const isManager = profile?.role === "manager";
+  const isCons    = profile?.role === "consultant";
   const [entries, setEntries]   = useState([]);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading]   = useState(true);
@@ -2602,12 +2608,12 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
 
     // Ticket eforları
     let q = supabase.from("time_entries").select("*").gte("date", from).lte("date", to).order("date", {ascending:false});
-    if (!isAdmin) q = q.eq("consultant", who);
+    if (!isAdmin && !isManager) q = q.eq("consultant", who);
     const { data: td } = await q;
 
     // Proje eforları
     let pq = supabase.from("project_efors").select("*, projects(id, name, no, billable, company_id)").gte("date", from).lte("date", to).order("date", {ascending:false});
-    if (!isAdmin) pq = pq.eq("consultant", who);
+    if (!isAdmin && !isManager) pq = pq.eq("consultant", who);
     const { data: pd } = await pq;
 
     // Tüm projeler (form için)
@@ -2741,7 +2747,7 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
         </div>
 
         {/* Danışman filtresi (sadece admin) */}
-        {isAdmin && (
+        {(isAdmin||isManager) && (
           <select value={fCons} onChange={e=>setFCons(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
             <option value="all">Tüm Danışmanlar</option>
             {[...new Set(entries.map(e=>e.consultant).filter(Boolean))].sort().map(c=>(
@@ -2751,7 +2757,7 @@ const ZamanCizelgesi = ({ profile, companies, tickets }) => {
         )}
 
         {/* Firma filtresi (sadece admin) */}
-        {isAdmin && (
+        {(isAdmin||isManager) && (
           <select value={fComp} onChange={e=>setFComp(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13, cursor:"pointer" }}>
             <option value="all">Tüm Firmalar</option>
             {companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
@@ -3803,9 +3809,10 @@ const UsersPage = ({ companies, onReload }) => {
   };
 
   const ROLE_CONFIG = {
-    admin:      { label:"Yönetici",  color:"#A855F7", bg:"#A855F720", icon:"shield" },
-    consultant: { label:"Danışman",  color:"#0EA5E9", bg:"#0EA5E920", icon:"users"  },
-    customer:   { label:"Müşteri",   color:"#10B981", bg:"#10B98120", icon:"user"   },
+    admin:      { label:"Yönetici (Admin)",  color:"#A855F7", bg:"#A855F720", icon:"shield" },
+    manager:    { label:"Yönetici",          color:"#F59E0B", bg:"#F59E0B20", icon:"briefcase" },
+    consultant: { label:"Danışman",          color:"#0EA5E9", bg:"#0EA5E920", icon:"users"  },
+    customer:   { label:"Müşteri",           color:"#10B981", bg:"#10B98120", icon:"user"   },
   };
 
   return (
@@ -4027,8 +4034,8 @@ const NotificationsPage = ({ profile, companies, consultants }) => {
       } else if (profile?.role === "customer") {
         q = q.eq("company_id", profile.company_id);
       }
-      // admin: recipient_id olan (kendine) veya null (herkese açık)
-      if (profile?.role === "admin") {
+      // admin ve manager: recipient_id olan (kendine) veya null (herkese açık)
+      if (profile?.role === "admin" || profile?.role === "manager") {
         q = q.or(`recipient_id.eq.${profile.id},recipient_id.is.null`);
       }
       const { data } = await q;
@@ -4178,6 +4185,7 @@ const PROJECT_STATUS_CONFIG = {
 
 const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
   const isAdmin    = profile?.role === "admin";
+  const isManager  = profile?.role === "manager";
   const isCons     = profile?.role === "consultant";
   const isCustomer = profile?.role === "customer";
 
@@ -4335,7 +4343,7 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
             <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:20 }}>
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:14 }}>
                 <h4 style={{ margin:0, fontSize:14, fontWeight:700, color:T.text }}>Efor Takibi <span style={{ fontSize:13, color:T.teal, marginLeft:8 }}>Toplam: {totalHours}h</span></h4>
-                {(isAdmin||isCons) && <Btn variant="ghost" size="sm" onClick={()=>setShowEforForm(p=>!p)}><Icon name="plus" size={13}/> Efor Ekle</Btn>}
+                {(isAdmin||isManager||isCons) && <Btn variant="ghost" size="sm" onClick={()=>setShowEforForm(p=>!p)}><Icon name="plus" size={13}/> Efor Ekle</Btn>}
               </div>
               {showEforForm && (
                 <div style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:14, marginBottom:14 }}>
@@ -4381,7 +4389,7 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
           {/* Sağ: Bilgiler */}
           <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
             {/* Durum */}
-            {(isAdmin||isCons) && (
+            {(isAdmin||isManager||isCons) && (
               <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:16 }}>
                 <h4 style={{ margin:"0 0 12px", fontSize:14, fontWeight:700, color:T.text }}>Durum Güncelle</h4>
                 {Object.entries(PROJECT_STATUS_CONFIG).map(([k,v])=>(
@@ -4393,7 +4401,7 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
             )}
 
             {/* Danışman atama */}
-            {isAdmin && (
+            {(isAdmin||isManager) && (
               <div style={{ background:T.card, border:`1px solid ${T.border}`, borderRadius:14, padding:16 }}>
                 <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12 }}>
                   <Icon name="users" size={16} color={T.purple}/>
@@ -4455,7 +4463,7 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
           <option value="all">Tüm Durumlar</option>
           {Object.entries(PROJECT_STATUS_CONFIG).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
         </select>
-        {(isAdmin||isCons) && (
+        {(isAdmin||isManager||isCons) && (
           <select value={fComp} onChange={e=>setFComp(e.target.value)} style={{ background:T.bg3, border:`1px solid ${T.border}`, borderRadius:10, padding:"9px 14px", color:T.text, fontSize:13 }}>
             <option value="all">Tüm Firmalar</option>
             {companies.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
@@ -4563,7 +4571,7 @@ const ProjectsPage = ({ profile, companies, consultants, allUsers=[] }) => {
             </div>
           </div>
 
-          {isAdmin && (
+          {(isAdmin||isManager) && (
             <div style={{ marginBottom:16 }}>
               <label style={{ display:"block", fontSize:13, fontWeight:600, color:T.text2, marginBottom:6 }}>Danışmanlar</label>
               <ConsultantDropdown consultants={consultants} selected={form.assignees} onChange={list=>setForm(p=>({...p,assignees:list}))}/>
