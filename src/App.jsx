@@ -412,7 +412,7 @@ const MobileNav = ({ page, setPage, profile, onLogout, unreadCount, themeT }) =>
     ...(!isAdmin && !isManager && !isCons ? [] : [{ id:"timesheet",  label:"Efor Takip", icon:"timesheet" }]),
     ...(!isAdmin ? [] : [{ id:"invoices",  label:"Faturalar",       icon:"invoice"  }]),
     ...(!isAdmin && !isManager ? [] : [{ id:"reports",   label:"Raporlar",        icon:"reports"  }]),
-    ...(!isAdmin && !isManager ? [] : [{ id:"users",     label:"Kullanıcılar",    icon:"userplus" }]),
+    ...(!isAdmin ? [] : [{ id:"users",     label:"Kullanıcılar",    icon:"userplus" }]),
     ...(!isAdmin && !isManager ? [] : [{ id:"ayarlar",   label:"Platform Ayrları",icon:"settings" }]),
   ];
 
@@ -494,15 +494,15 @@ const Sidebar = ({ page, setPage, profile, onLogout, unreadCount = 0 }) => {
   const isCons    = profile?.role === "consultant";
   const nav = [
     { id:"dashboard", label:"Dashboard",    icon:"dashboard" },
-    ...(!isAdmin && !isCons ? [] : [{ id:"companies",  label:"Firmalar",     icon:"companies" }]),
+    ...(!isAdmin && !isManager && !isCons ? [] : [{ id:"companies",  label:"Firmalar",     icon:"companies" }]),
     { id:"tickets",   label:"Talepler",     icon:"tickets" },
     { id:"projects",  label:"Projeler",     icon:"folder" },
-    ...(!isAdmin && !isCons ? [] : [{ id:"zaman",      label:"Zaman Çizelgesi", icon:"timesheet" }]),
-    ...(!isAdmin && !isCons ? [] : [{ id:"timesheet",  label:"Efor Takip",   icon:"activity" }]),
+    ...(!isAdmin && !isManager && !isCons ? [] : [{ id:"zaman",      label:"Zaman Çizelgesi", icon:"timesheet" }]),
+    ...(!isAdmin && !isManager && !isCons ? [] : [{ id:"timesheet",  label:"Efor Takip",   icon:"activity" }]),
     ...(!isAdmin ? [] : [{ id:"invoices",   label:"Faturalar",    icon:"invoice" }]),
-    ...(!isAdmin ? [] : [{ id:"reports",    label:"Raporlar",     icon:"reports" }]),
+    ...(!isAdmin && !isManager ? [] : [{ id:"reports",    label:"Raporlar",     icon:"reports" }]),
     ...(!isAdmin ? [] : [{ id:"users",      label:"Kullanıcılar",      icon:"userplus" }]),
-    ...(!isAdmin ? [] : [{ id:"ayarlar",    label:"Platform Ayarları", icon:"settings" }]),
+    ...(!isAdmin && !isManager ? [] : [{ id:"ayarlar",    label:"Platform Ayarları", icon:"settings" }]),
   ];
   return (
     <div style={{ width:220, background:T.bg2, borderRight:`1px solid ${T.border}`, display:"flex", flexDirection:"column", flexShrink:0, height:"100vh", position:"sticky", top:0 }}>
