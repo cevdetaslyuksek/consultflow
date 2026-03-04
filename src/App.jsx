@@ -1,6 +1,7 @@
-// ConsultFlow v5.5 - Full Featured
+// ConsultFlow v5.8 - Opportunities Module Added
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
+import OpportunitiesPage from "./OpportunitiesPage.jsx";
 
 const supabase = createClient(
   "https://mpcfozvnmddgyobkfnsk.supabase.co",
@@ -232,6 +233,7 @@ const Icon = ({ name, size = 16, color }) => {
     activity:   <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>,
     dotcircle:  <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>,
     settings:   <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>,
+    star:       <svg {...s} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="currentColor"/></svg>,
   };
   return icons[name] || null;
 };
@@ -402,6 +404,7 @@ const MobileNav = ({ page, setPage, profile, onLogout, unreadCount, themeT }) =>
   const mainNav = [
     { id:"dashboard", label:"Ana Sayfa", icon:"dashboard" },
     { id:"tickets",   label:"Talepler",  icon:"tickets" },
+    { id:"opportunities", label:"Fırsatlar", icon:"star" },
     { id:"zaman",     label:"Çizelge",   icon:"timesheet" },
     { id:"notifications", label:"Bildirim", icon:"bell", badge: unreadCount },
   ];
@@ -496,6 +499,7 @@ const Sidebar = ({ page, setPage, profile, onLogout, unreadCount = 0 }) => {
     { id:"dashboard", label:"Dashboard",    icon:"dashboard" },
     ...(!isAdmin && !isManager && !isCons ? [] : [{ id:"companies",  label:"Firmalar",     icon:"companies" }]),
     { id:"tickets",   label:"Talepler",     icon:"tickets" },
+    ...(!isAdmin && !isManager && !isCons ? [] : [{ id:"opportunities", label:"Fırsatlar", icon:"star" }]),
     { id:"projects",  label:"Projeler",     icon:"folder" },
     ...(!isAdmin && !isManager && !isCons ? [] : [{ id:"zaman",      label:"Zaman Çizelgesi", icon:"timesheet" }]),
     ...(!isAdmin && !isManager && !isCons ? [] : [{ id:"timesheet",  label:"Efor Takip",   icon:"activity" }]),
@@ -4988,6 +4992,7 @@ function AppInner() {
       case "dashboard":     return <DashboardPage profile={profile} tickets={tickets} companies={companies} consultants={consultants}/>;
       case "companies":     return <CompaniesPage profile={profile} companies={companies} reloadCompanies={loadAll} allUsers={allUsers} tickets={tickets}/>;
       case "tickets":       return <TicketsPage profile={profile} companies={companies} consultants={consultants} reload={loadAll} tickets={tickets} allUsers={allUsers}/>;
+      case "opportunities": return <OpportunitiesPage profile={profile} companies={companies} consultants={consultants} supabase={supabase} showToast={showToast}/>;
       case "projects":      return <ProjectsPage profile={profile} companies={companies} consultants={consultants} allUsers={allUsers}/>;
       case "zaman":         return <ZamanCizelgesi profile={profile} companies={companies} tickets={tickets}/>;
       case "timesheet":     return <TimesheetPage profile={profile} companies={companies} consultants={consultants} tickets={tickets}/>;
